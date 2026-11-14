@@ -6,7 +6,7 @@ import {
   standings, nextSection, isFinished, signed, sectionLimits, ADJ_LIMITS,
   normalizeState,
 } from "./engine.mjs";
-import { SKILL_LABEL, DRAKE_STATES } from "./rolls.mjs";
+import { SKILL_LABEL, DRAKE_STATES, DEGREE_LABEL } from "./rolls.mjs";
 
 /** Everything the tower template needs. */
 export function towerContext(state, { isGM = false, portraitFor = null, canRoll = false } = {}) {
@@ -74,6 +74,8 @@ export function towerContext(state, { isGM = false, portraitFor = null, canRoll 
       drake: DRAKE_STATES[state.drake[r.id] ?? 0],
       drakeRung: state.drake[r.id] ?? 0,
       rolled: !!state.pending[r.id],
+      rolledLabel: rolledLabel(state.pending[r.id]),
+      rolledClass: state.pending[r.id]?.degree ?? "",
     })),
     status: {
       favor: state.favor.party ?? 0,
@@ -112,4 +114,11 @@ export function validateInput(state, input, unlocked = false) {
 export function readoutFor(base, gain, min, max) {
   const g = Number(gain) || 0;
   return { total: base + g, ok: g >= min && g <= max };
+}
+
+/** Text for the "rolled" badge: the degree of success (or how the Narrows went). */
+function rolledLabel(p) {
+  if (!p) return "";
+  if (p.skill === "narrows") return p.degree === "success" ? "Sheltered" : "Thrown out";
+  return DEGREE_LABEL[p.degree] ?? "Rolled";
 }

@@ -338,47 +338,56 @@ export function buildNarrowsHtml({ pcName, checks, vp, notes, auto = true }) {
   return `<h4 style="margin:0 0 4px 0">${esc(pcName)}: The Narrows <small>(DC ${NARROWS_DC})</small></h4>${rows}<div>${vpLine(vp, auto)} · ${notes.map(esc).join(" · ")}</div>`;
 }
 
+/** What each line pays, for the three line cards. */
+const LINE_CARD = {
+  safe:     { tag: "Steady",        crit: "+2 VP", ok: "+1 VP", fail: "0",              critFail: "-1 VP" },
+  standard: { tag: "The usual",     crit: "+3 VP", ok: "+2 VP", fail: "0",              critFail: "-1 VP" },
+  risky:    { tag: "High stakes",   crit: "+4 VP", ok: "+3 VP", fail: "0, drake drops a rung", critFail: "-1 VP, drake drops a rung" },
+};
+
 /** The skill picker a player sees. `mods` maps skill -> that rider's modifier; `targets` is from eligibleTargets. */
-export function buildDialogHtml(state, pcId, menu, { mods = {}, targets = [], key }) {
+export function buildDialogHtml(state, pcId, menu, { mods = {}, targets = [], key } = {}) {
   const used = new Set(state.used?.[pcId] ?? []);
   const strained = (state.drake?.[pcId] ?? 0) >= 2;
-  const groups = [];
-  for (const c of menu.choices) {
-    let g = groups.find((x) => x.name === c.group);
-    if (!g) { g = { name: c.group, desc: c.desc, items: [] }; groups.push(g); }
-    g.items.push(c);
-  }
   const showLines = menu.lines && menu.type !== "lane" && menu.type !== "battle";
-  const lineHtml = showLines ? `<fieldset><legend>Line</legend>${Object.values(LINES).map((L, i) => {
+
+  // ---- step 1: the line, as three panels ----
+  const lineHtml = showLines ? `<div class="srt-step"><span class="n">1</span> Choose your line</div><div class="srt-lines">${Object.values(LINES).map((L) => {
+    const c = LINE_CARD[L.id];
     const dis = L.id === "risky" && strained;
-    return `<label class="opt${dis ? " used" : ""}"><input type="radio" name="line" value="${L.id}" ${i === 1 ? "checked" : ""} ${dis ? "disabled" : ""}> `
-      + `<b>${L.label}</b> · DC ${L.dc} · ${L.vp[0]} VP (crit ${L.vp[1]})${dis ? " <i>(a Strained drake can't go all-out)</i>" : ""}</label>`;
-  }).join("")}<div class="note">Flair and lane choices set their own DC.</div></fieldset>` : "";
+    return `<label class="srt-pick srt-line ${L.id}${dis ? " off" : ""}"><input type="radio" name="line" value="${L.id}" ${L.id === "standard" ? "checked" : ""} ${dis ? "disabled" : ""}>`
+      + `<span class="card"><span class="head"><b>${L.label}</b><span class="dc">DC ${L.dc}</span></span><span class="tag">${dis ? "A Strained drake can't go all-out" : c.tag}</span>`
+      + `<span class="pay"><span><i>Critical success</i><b>${c.crit}</b></span><span><i>Success</i><b>${c.ok}</b></span><span><i>Failure</i><b>${c.fail}</b></span><span><i>Critical failure</i><b>${c.critFail}</b></span></span></span></label>`;
+  }).join("")}</div>${menu.type === "hall" ? '<div class="srt-note">The Dip uses your line. The Narrows is three checks at DC 30 and ignores it.</div>' : '<div class="srt-note">Flair and fixed lanes set their own DC.</div>'}` : "";
 
-  const groupHtml = groups.map((g) => {
-    const items = g.items.map((c) => {
-      const isUsed = (menu.type !== "battle") && c.special !== "narrows" && used.has(c.skill);
-      const mod = mods[c.skill];
-      const label = c.special === "narrows" ? "Take the Narrows (pick three skills below)" : esc(SKILL_LABEL[c.skill]);
-      const dc = c.line ? ` · ${LINES[c.line].label}, DC ${LINES[c.line].dc}` : "";
-      const modText = mod === undefined ? "" : ` <b>${signed(mod)}</b>`;
-      return `<label class="opt${isUsed ? " used" : ""}"><input type="radio" name="choice" value="${c.id}" ${isUsed ? "disabled" : ""}> `
-        + `${isUsed ? `<s>${label}</s> <i>(already used this lap)</i>` : `${label}${modText}${dc}`}</label>`;
-    }).join("");
-    const narrows = g.items.some((c) => c.special === "narrows")
-      ? `<div class="narrows">${["athletics", "acrobatics", "nature", "survival", "intimidation", "deception", "perception"].map((s) => `<label><input type="checkbox" name="narrows" value="${s}"> ${SKILL_LABEL[s]}${mods[s] === undefined ? "" : ` ${signed(mods[s])}`}</label>`).join(" ")}</div>` : "";
-    return `<div class="grp"><div class="grp-title">${esc(g.name)}</div><div class="grp-desc">${esc(g.desc)}</div>${items}${narrows}</div>`;
-  }).join("");
+  // ---- step 2: the approach, one row per skill: skill on the left, what it does on the right ----
+  const rows = [];
+  for (const c of menu.choices) {
+    const isUsed = menu.type !== "battle" && c.special !== "narrows" && used.has(c.skill);
+    const mod = mods[c.skill];
+    const skillName = c.special === "narrows" ? "The Narrows" : SKILL_LABEL[c.skill];
+    const modHtml = mod === undefined || c.special === "narrows" ? "" : `<span class="mod">${signed(mod)}</span>`;
+    const pill = c.line ? `<span class="pill ${c.line}">${LINES[c.line].label} · DC ${LINES[c.line].dc}</span>` : "";
+    const left = isUsed ? `<span class="skill"><s>${esc(skillName)}</s></span><span class="usedtag">used this lap</span>` : `<span class="skill">${esc(skillName)}${modHtml}</span>${pill}`;
+    rows.push(`<label class="srt-pick srt-opt${isUsed ? " off" : ""}"><input type="radio" name="choice" value="${c.id}" ${isUsed ? "disabled" : ""}>`
+      + `<span class="card"><span class="left">${left}</span><span class="right"><b>${esc(c.group)}</b><span>${esc(c.desc)}</span></span></span></label>`);
+    if (c.special === "narrows") {
+      rows.push(`<div class="srt-narrows"><span>Pick three different skills:</span>${["athletics", "acrobatics", "nature", "survival", "intimidation", "deception", "perception"].map((sk) => `<label class="chip"><input type="checkbox" name="narrows" value="${sk}"><span>${SKILL_LABEL[sk]}${mods[sk] === undefined ? "" : ` <b>${signed(mods[sk])}</b>`}</span></label>`).join("")}</div>`);
+    }
+  }
+  const approachHtml = `<div class="srt-step"><span class="n">${showLines ? 2 : 1}</span> ${menu.type === "battle" ? "Choose your battle action" : menu.type === "lane" ? "Choose your lane" : "Choose your approach"}</div><div class="srt-opts">${rows.join("")}</div>`;
 
-  const targetHtml = menu.choices.some((c) => c.target)
-    ? `<fieldset><legend>Target (for rival effects)</legend><select name="target"><option value="">No target</option>${targets.map((t) => `<option value="${t.id}">${esc(t.name)} (${t.total} VP)</option>`).join("")}</select>${targets.length ? "" : '<div class="note">No rival is within 2 VP right now.</div>'}</fieldset>` : "";
-
+  // ---- target and help ----
+  const needTarget = menu.choices.some((c) => c.target);
+  const targetHtml = needTarget
+    ? `<div class="srt-help"><label>Target <select name="target"><option value="">No target</option>${targets.map((t) => `<option value="${t.id}">${esc(t.name)} (${t.total} VP)</option>`).join("")}</select></label>${targets.length ? "" : '<span class="srt-note">No rival is within 2 VP right now.</span>'}</div>` : "";
   const favor = state.favor?.party ?? 0;
   const left = 2 - (state.favor?.spent ?? 0);
-  const extras = `<fieldset><legend>Help</legend>
-    <label>Bench help (circumstance) <select name="bench"><option value="0">None</option><option value="1">+1</option><option value="2">+2</option></select></label>
-    <label class="spend"><input type="checkbox" name="spendFavor" ${favor < 1 || left < 1 ? "disabled" : ""}> Spend 1 Favor for +1 <i>(party has ${favor}; ${Math.max(0, left)} spend${left === 1 ? "" : "s"} left this lap)</i></label>
-    <div class="note">The party's +2 is added automatically.${(state.drake?.[pcId] ?? 0) ? ` Your drake is ${DRAKE_STATES[state.drake[pcId]]}.` : ""}</div></fieldset>`;
+  const drakeNote = (state.drake?.[pcId] ?? 0) ? ` Your drake is ${DRAKE_STATES[state.drake[pcId]]}.` : "";
+  const helpHtml = `<div class="srt-help">`
+    + `<label>Bench help <select name="bench"><option value="0">None</option><option value="1">+1</option><option value="2">+2</option></select></label>`
+    + `<label class="spend"><input type="checkbox" name="spendFavor" ${favor < 1 || left < 1 ? "disabled" : ""}> Spend 1 Favor for +1 <small>(party has ${favor}; ${Math.max(0, left)} left this lap)</small></label>`
+    + `<span class="srt-note">The party's +2 is added automatically.${drakeNote}</span></div>`;
 
-  return `<form class="srt-dialog"><p class="intro">${esc(menu.intro)}</p>${lineHtml}<fieldset><legend>${menu.type === "battle" ? "Battle action" : "Approach"}</legend>${groupHtml}</fieldset>${targetHtml}${extras}</form>`;
+  return `<form class="srt-dialog"><p class="srt-intro">${esc(menu.intro)}</p>${lineHtml}${approachHtml}${targetHtml}${helpHtml}</form>`;
 }

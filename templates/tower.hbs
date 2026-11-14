@@ -38,7 +38,7 @@
       <span class="chips">
         {{#if noneUsed}}<span class="none">nothing used yet</span>{{else}}{{#each used}}<span class="chip"><s>{{this}}</s></span>{{/each}}{{/if}}
       </span>
-      {{#if rolled}}<span class="rolled-badge">rolled</span>{{/if}}
+      {{#if rolled}}<span class="rolled-badge {{rolledClass}}">{{rolledLabel}}</span>{{/if}}
     </div>
     {{/each}}
     <div class="srt-line">Party Favor <b>{{status.favor}}</b> <i>({{status.favorSpent}}/2 spent this lap)</i> &nbsp;·&nbsp; Influence: Qiu May <b>{{status.qiu}}</b>, Hida <b>{{status.hida}}</b></div>

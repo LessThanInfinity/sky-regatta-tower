@@ -228,18 +228,30 @@ test("the roll dialog strikes through and disables used skills, and shows what e
   s.used.violet = ["athletics"];
   const html = buildDialogHtml(s, "violet", sectionMenu(1, "A"), { mods: { athletics: 23, nature: 18 }, targets: [{ id: "syu", name: "Syu Tak-nwa", total: 2 }], key: "A" });
   assert.match(html, /<s>Athletics<\/s>/);
-  assert.match(html, /already used this lap/);
+  assert.match(html, /used this lap/);
   assert.match(html, /value="muscle-through:athletics" disabled/);
-  assert.match(html, /value="command-the-drake:nature" >/);                          // an unused skill is selectable
-  assert.match(html, /Rile up the crowd/);                                            // Flair explains itself
+  assert.doesNotMatch(html, /value="command-the-drake:nature" disabled/);                // an unused skill is selectable
+  assert.match(html, /Rile up the crowd/);                                              // Flair explains itself
   assert.match(html, /Syu Tak-nwa \(2 VP\)/);
   assert.match(html, /\+18/);
+  assert.match(html, /class="skill">Nature/);                                            // the skill is the row's headline
+});
+
+test("the three lines are panels with the payout for every degree", () => {
+  const html = buildDialogHtml(freshState(), "violet", sectionMenu(1, "A"), { key: "A" });
+  assert.equal((html.match(/class="srt-pick srt-line /g) ?? []).length, 3);
+  assert.match(html, /srt-line safe/); assert.match(html, /srt-line standard/); assert.match(html, /srt-line risky/);
+  assert.match(html, /Critical success/); assert.match(html, /Critical failure/);
+  assert.match(html, /drake drops a rung/);
+  assert.match(html, /value="standard" checked/);
+  assert.doesNotMatch(buildDialogHtml(freshState(), "violet", sectionMenu(1, "B"), { key: "B" }), /srt-lines/);   // lanes have no line panels
 });
 
 test("a Strained drake can't pick the Risky line in the dialog", () => {
   const s = freshState(); s.drake.violet = 2;
   const html = buildDialogHtml(s, "violet", sectionMenu(1, "D"), { key: "D" });
-  assert.match(html, /value="risky"[^>]*disabled/);
+  assert.match(html, /value="risky" {0,2}disabled/);
+  assert.match(html, /srt-line risky off/);
 });
 
 test("the DC card has the lines and a Roll button tied to the section", () => {

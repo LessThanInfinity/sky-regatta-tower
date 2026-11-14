@@ -34,6 +34,8 @@ const autoVp = () => game.settings.get(MODULE_ID, "autoVp");
 const d6 = async () => (await new Roll("1d6").evaluate()).total;
 const isActiveGM = () => game.user.isGM && game.users.activeGM?.id === game.user.id;
 
+const gmIds = () => ChatMessage.getWhisperRecipients("GM").map((u) => u.id);
+
 async function whisper(html) {
   const gms = ChatMessage.getWhisperRecipients("GM").map((u) => u.id);
   await ChatMessage.create({ content: html, whisper: gms, speaker: { alias: "Sky Regatta" } });
@@ -168,7 +170,7 @@ async function executePcRoll(req, userId) {
     const res = applyNarrows(state, req, rolls, { autoVp: autoVp() });
     if (!res.ok) return reject(userId, res.error);
     await saveState(state);
-    await ChatMessage.create({ speaker, rolls: chat, sound: CONFIG.sounds.dice, content: buildNarrowsHtml({ pcName: entry.name, checks: res.checks, vp: res.pending.suggested, notes: res.pending.notes, auto: autoVp() }) });
+    await ChatMessage.create({ speaker, whisper: gmIds(), rolls: chat, sound: CONFIG.sounds.dice, content: buildNarrowsHtml({ pcName: entry.name, checks: res.checks, vp: res.pending.suggested, notes: res.pending.notes, auto: autoVp() }) });
     return;
   }
 
@@ -179,7 +181,7 @@ async function executePcRoll(req, userId) {
   await saveState(state);
   const p = res.pending;
   await ChatMessage.create({
-    speaker, rolls: [roll], sound: CONFIG.sounds.dice,
+    speaker, whisper: gmIds(), rolls: [roll], sound: CONFIG.sounds.dice,
     content: buildPcRollHtml({ pcName: entry.name, choice: v.choice, lineId: v.lineId, dc: v.dc, nat: roll.total, parts: m.parts, total: p.total, degree: p.degree, vp: p.suggested, notes: p.notes, auto: autoVp() }),
   });
 }
@@ -422,8 +424,8 @@ Hooks.once("init", () => {
   });
   game.settings.register(MODULE_ID, "npcDiceVisible", {
     name: "Show the NPC d20s to players",
-    hint: "On: players see the dice (and Dice So Nice animates them). Off: only the GM sees them.",
-    scope: "world", config: true, type: Boolean, default: true,
+    hint: "On: players see the dice (and Dice So Nice animates them). Off (default): only the GM sees them.",
+    scope: "world", config: true, type: Boolean, default: false,
   });
   game.settings.register(MODULE_ID, "npcFouls", {
     name: "NPC fouls",

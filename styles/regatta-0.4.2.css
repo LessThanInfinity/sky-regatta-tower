@@ -1,5 +1,6 @@
 /* Sky Regatta Standings: F1 timing-tower look */
-.sky-regatta .window-content { padding: 0; background: #15151e; color: #fff; }
+.sky-regatta { max-height: 90vh; }
+.sky-regatta .window-content { overflow-y: auto; min-height: 0; padding: 0; background: #15151e; color: #fff; }
 
 .sky-regatta .srt { font-family: "Titillium Web", "Signika", "Segoe UI", sans-serif; text-transform: uppercase; letter-spacing: 0.02em; }
 
@@ -175,13 +176,14 @@
 .srt-card .srt-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-bottom: 6px; }
 .srt-card .badge { border: 2px solid #e10600; font-weight: 700; font-size: 0.6rem; padding: 0 5px; letter-spacing: 0.05em; }
 .srt-card .title { font-weight: 700; font-size: 0.95rem; }
-.srt-card .sub { flex-basis: 100%; font-size: 0.74rem; opacity: 0.75; }
+.srt-card .sub { flex-basis: 100%; font-size: 0.76rem; opacity: 0.9; }
 .srt-card .srt-card-head .badge + .title { }
 .srt-card .deg { display: inline-block; font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 1px 6px; border-radius: 3px; border: 1px solid currentColor; white-space: nowrap; }
-.srt-card .deg.critSuccess { color: #3ddc84; background: rgba(61, 220, 132, 0.14); }
-.srt-card .deg.success { color: #9bd96b; background: rgba(155, 217, 107, 0.10); }
-.srt-card .deg.failure { color: #ff9f43; background: rgba(255, 159, 67, 0.10); }
-.srt-card .deg.critFailure { color: #ff5a5a; background: rgba(255, 90, 90, 0.14); }
+.srt-card .deg { color: #fff; border: 1px solid rgba(0,0,0,0.55); text-shadow: 0 1px 1px rgba(0,0,0,0.45); }
+.srt-card .deg.critSuccess { background: #12803f; }
+.srt-card .deg.success { background: #4f8a1c; }
+.srt-card .deg.failure { background: #c4620a; }
+.srt-card .deg.critFailure { background: #b3261e; }
 
 /* the DC card: three columns that fit the sidebar */
 .srt-dc-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
@@ -214,10 +216,10 @@
 .srt-roll .nrow .calc { flex: 1; }
 
 /* the field's dice */
-.srt-field .frow { padding: 3px 0; border-top: 1px solid rgba(128, 128, 140, 0.25); }
+.srt-field .frow { padding: 3px 0; border-top: 1px solid rgba(60, 60, 70, 0.45); }
 .srt-field .frow .top { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
 .srt-field .frow .who { font-weight: 700; }
-.srt-field .frow .det { font-size: 0.7rem; opacity: 0.7; }
+.srt-field .frow .det { font-size: 0.74rem; opacity: 0.9; }
 .srt-field .frow .calc { font-size: 0.78rem; }
-.srt-field .frow .tgt { font-size: 0.74rem; color: #ffb36b; }
-.srt-field .frow .tgt b { color: #ffd3a6; }
+.srt-field .frow .tgt { font-size: 0.78rem; font-weight: 600; color: #a14a00; }
+.srt-field .frow .tgt b { color: #7a2f00; text-decoration: underline; }

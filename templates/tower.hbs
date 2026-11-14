@@ -11,7 +11,7 @@
       <span class="delta">THIS</span><span class="total">VP</span><span class="movegap"><span class="move"></span><span class="gap">GAP</span></span>
     </li>
     {{#each rows}}
-    <li class="srt-row {{#if isLeader}}leader{{/if}} {{#if pc}}pc{{/if}} {{rowClass}}">
+    <li class="srt-row {{#if isLeader}}leader{{/if}} {{#if pc}}pc{{/if}} {{rowClass}}" data-id="{{id}}">
       <span class="pos">{{rank}}</span>
       <span class="tag" style="--team: {{color}}">{{code}}</span>
       <span class="name">

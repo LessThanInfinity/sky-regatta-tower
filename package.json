@@ -1,1 +1,1 @@
-{"name":"sky-regatta-tower","version":"0.2.2","private":true,"type":"module","scripts":{"test":"node --test test/engine.test.mjs test/view.test.mjs"}}
+{"name":"sky-regatta-tower","version":"0.3.0","private":true,"type":"module","scripts":{"test":"node --test test/engine.test.mjs test/view.test.mjs test/animate.test.mjs"}}

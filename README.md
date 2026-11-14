@@ -7,6 +7,7 @@ An F1-style timing tower for the Sky Regatta race (Foundry VTT v13).
 - Green and red carets show places gained or lost in the last section, with a matching green or red underline on the row.
 - The PC inputs have + and - buttons and stay inside what one section allows (for example up to +4 for a line roll, +6 for the Narrows). Tick *Unlock limits* to override.
 - A whispered chat message lists what each NPC did, so you can move tokens.
+- Rows slide up and down when riders change position (about 0.7 seconds; each player can turn it off in module settings, and it respects the browser's reduce-motion setting).
 - The window opens by itself on every player's screen when you resolve a section (a client setting turns that off).
 
 The rules live in `scripts/engine.mjs` (pure JavaScript, unit tested). The riders, ratings, personalities and team colors are in the `ROSTER` list at the top of that file.

@@ -7,6 +7,7 @@ import {
   freshState, resolveSection, undo as undoState, nextSection, isFinished, buildReport,
 } from "./engine.mjs";
 import { towerContext, validateInput, readoutFor } from "./view.mjs";
+import { captureTops, playSlides } from "./animate.mjs";
 
 const MODULE_ID = "sky-regatta-tower";
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
@@ -101,7 +102,10 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
 
   static PARTS = { tower: { template: `modules/${MODULE_ID}/templates/tower.hbs` } };
 
+  #prevTops = null;    // row positions before this redraw, for the slide animation
+
   async _prepareContext() {
+    this.#prevTops = this.element ? captureTops(this.element) : null;   // the old rows are still on screen here
     const state = getState() ?? freshState();
     const showPortraits = game.settings.get(MODULE_ID, "showPortraits");
     return towerContext(state, {
@@ -112,6 +116,9 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
 
   /** Live "= new total" readout beside each PC stepper as the GM types or steps. */
   _onRender() {
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (this.#prevTops && game.settings.get(MODULE_ID, "animate") && !reduceMotion) playSlides(this.element, this.#prevTops);
+    this.#prevTops = null;
     for (const input of this.element.querySelectorAll("input[data-kind='pc']")) {
       input.addEventListener("input", () => this.#updateReadout(input));
     }
@@ -177,6 +184,11 @@ Hooks.once("init", () => {
   game.settings.register(MODULE_ID, "autoOpen", {
     name: "Open the standings automatically",
     hint: "Open the Sky Regatta standings window whenever the GM resolves a section.",
+    scope: "client", config: true, type: Boolean, default: true,
+  });
+  game.settings.register(MODULE_ID, "animate", {
+    name: "Animate the standings",
+    hint: "Slide the rows up and down when riders change position. Turn off on a slow computer.",
     scope: "client", config: true, type: Boolean, default: true,
   });
   game.settings.register(MODULE_ID, "showPortraits", {

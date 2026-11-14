@@ -34,6 +34,7 @@
 <script type="module">
 import { freshState, resolveSection, undo } from "../scripts/engine.mjs";
 import { towerContext, validateInput, readoutFor } from "../scripts/view.mjs";
+import { captureTops, playSlides } from "../scripts/animate.mjs";
 
 const tpl = Handlebars.compile(await (await fetch("../templates/tower.hbs")).text());
 let state = freshState();
@@ -42,8 +43,11 @@ const gm = document.getElementById("gm");
 const unlocked = () => !!gm.querySelector("input[name='unlock']")?.checked;
 
 function render() {
+  const player = document.getElementById("player");
+  const prevGm = captureTops(gm), prevPlayer = captureTops(player);
   gm.innerHTML = tpl(towerContext(state, { isGM: true }));
-  document.getElementById("player").innerHTML = tpl(towerContext(state, { isGM: false }));
+  player.innerHTML = tpl(towerContext(state, { isGM: false }));
+  window.__slides = playSlides(player, prevPlayer) + playSlides(gm, prevGm);
   for (const input of gm.querySelectorAll("input[data-kind='pc']")) input.addEventListener("input", () => updateHint(input));
 }
 function updateHint(input) {

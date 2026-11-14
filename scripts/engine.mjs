@@ -13,14 +13,14 @@ export const OBSTACLE = { 1: "Bell Gate", 2: "Rising Hall", 3: "Cable Web", 4: "
 
 // rating: Ace +1, Steady 0, Rookie -1.  tag: aggressive | cautious | hothead | showboat | steady
 export const ROSTER = [
-  { id: "violet",   code: "VIO", name: "Violet",      team: "Party",             color: "#a855f7", pc: true,  actor: "Violet" },
-  { id: "aji",      code: "AJI", name: "Aji",         team: "Party",             color: "#a855f7", pc: true,  actor: "Aji Sakusen" },
-  { id: "viridian", code: "VIR", name: "Viridian",    team: "Scales of Destiny", color: "#22a559", rating: 1, tag: "hothead",    actor: "VIRIDIAN" },
-  { id: "ivory",    code: "IVO", name: "Ivory",       team: "Scales of Destiny", color: "#22a559", rating: 0, tag: "cautious",   actor: "IVORY" },
-  { id: "syu",      code: "SYU", name: "Syu Tak-nwa", team: "LightKeepers",      color: "#f5b301", rating: 1, tag: "aggressive", actor: "Syu Tak-nwa" },
-  { id: "ranto",    code: "RAN", name: "Ran-to",      team: "LightKeepers",      color: "#f5b301", rating: 0, tag: "aggressive", actor: "Ran-to" },
-  { id: "sarah",    code: "SAR", name: "Sarah",       team: "Flashpoint",        color: "#ff2e7e", rating: 0, tag: "showboat",   actor: "SARAH \"QUICKSHOT\"" },
-  { id: "dutch",    code: "DUT", name: "Dutch",       team: "Flashpoint",        color: "#ff2e7e", rating: 0, tag: "cautious",   actor: "DUTCH CARVER" },
+  { id: "violet",   code: "VIO", name: "Violet",      team: "Party",             color: "#a855f7", pc: true,  actor: "Violet" , skills: { athletics: 23, acrobatics: 21, nature: 18, survival: 18, intimidation: 21, deception: 17, performance: 15, perception: 20, diplomacy: 17 } },
+  { id: "aji",      code: "AJI", name: "Aji",         team: "Party",             color: "#a855f7", pc: true,  actor: "Aji Sakusen" , skills: { athletics: 24, acrobatics: 0, nature: 0, survival: 16, intimidation: 21, deception: 20, performance: 20, perception: 20, diplomacy: 22 } },
+  { id: "viridian", code: "VIR", name: "Viridian",    team: "Scales of Destiny", color: "#22a559", rating: 1, tag: "hothead",    actor: "VIRIDIAN" , skills: { acrobatics: 27, nature: 27, athletics: 25, survival: 4, deception: 28, intimidation: 5, performance: 5, perception: 29, diplomacy: 30 } },
+  { id: "ivory",    code: "IVO", name: "Ivory",       team: "Scales of Destiny", color: "#22a559", rating: 0, tag: "cautious",   actor: "IVORY" , skills: { athletics: 23, acrobatics: 4, nature: 4, survival: 4, deception: 5, intimidation: 26, performance: 5, perception: 28, diplomacy: 26 } },
+  { id: "syu",      code: "SYU", name: "Syu Tak-nwa", team: "LightKeepers",      color: "#f5b301", rating: 1, tag: "aggressive", actor: "Syu Tak-nwa" , skills: { acrobatics: 26, athletics: 0, nature: 23, survival: 3, deception: 27, intimidation: 5, performance: 5, perception: 26, diplomacy: 5 } },
+  { id: "ranto",    code: "RAN", name: "Ran-to",      team: "LightKeepers",      color: "#f5b301", rating: 0, tag: "aggressive", actor: "Ran-to" , skills: { athletics: 30, acrobatics: 24, intimidation: 24, survival: 23, nature: 1, deception: 2, performance: 2, perception: 20, diplomacy: 2 } },
+  { id: "sarah",    code: "SAR", name: "Sarah",       team: "Flashpoint",        color: "#ff2e7e", rating: 0, tag: "showboat",   actor: "SARAH \"QUICKSHOT\"" , skills: { acrobatics: 30, athletics: 3, nature: 4, survival: 4, deception: 25, intimidation: 5, performance: 5, perception: 26, diplomacy: 5 } },
+  { id: "dutch",    code: "DUT", name: "Dutch",       team: "Flashpoint",        color: "#ff2e7e", rating: 0, tag: "cautious",   actor: "DUTCH CARVER" , skills: { acrobatics: 28, athletics: 24, nature: 4, survival: 4, deception: 27, intimidation: 4, performance: 4, perception: 26, diplomacy: 24 } },
 ];
 const NPCS = ROSTER.filter((r) => !r.pc);
 const PCS = ROSTER.filter((r) => r.pc);
@@ -40,7 +40,13 @@ export function freshState() {
     delta: Object.fromEntries(ROSTER.map((r) => [r.id, 0])),
     lapRolls: {},
     sheltered: Object.fromEntries(ROSTER.map((r) => [r.id, false])),
-    favor: { flashpoint: 0 },
+    favor: { flashpoint: 0, party: 0, spent: 0 },   // party Favor can be spent for +1 (max 2 per lap)
+    pending: {},      // each PC's roll for the section being played: { violet: { vp, skill, degree, ... } }
+    pendingAdj: {},   // VP changes queued for NPCs by PC actions (for example a Bump), applied on the next roll
+    used: { violet: [], aji: [] },     // skills each PC has used for a line roll this lap (no repeats)
+    drake: { violet: 0, aji: 0 },      // drake condition: 0 Fresh, 1 Winded, 2 Strained, 3 Spent
+    influence: { qiu: 0, hida: 0 },    // Influence Points with the sponsors
+    bonus: { violet: 0, aji: 0 },      // circumstance bonus carried to the next Obstacle roll
     last: null,       // { lap, key } of the section just resolved
     prevRank: null,   // rank of every rider before the last section (null when everyone was level)
     history: [],
@@ -58,6 +64,15 @@ export function sectionLimits(lap, key) {
   }
 }
 export const ADJ_LIMITS = { min: -3, max: 3 };               // GM adjustment to an NPC (for example a PC's Bump)
+
+/** Fills in anything a state saved by an older version of the module doesn't have yet. */
+export function normalizeState(state) {
+  const f = freshState();
+  for (const k of ["pending", "pendingAdj", "used", "drake", "influence", "bonus"]) state[k] ??= clone(f[k]);
+  state.favor ??= {};
+  for (const k of ["flashpoint", "party", "spent"]) state.favor[k] ??= 0;
+  return state;
+}
 
 export const isFinished = (state) => state.lap > 4;
 export const nextSection = (state) => (isFinished(state) ? null : { lap: state.lap, key: SECTIONS[state.sec], name: SECTION_NAME[SECTIONS[state.sec]] });
@@ -84,6 +99,7 @@ export function standings(vp) {
  * @param opts   { npcFouls: boolean }
  */
 export async function resolveSection(state, input, d6, opts = {}) {
+  normalizeState(state);
   const lap = state.lap;
   const key = SECTIONS[state.sec];
   state.history.push(clone({ ...state, history: undefined }));
@@ -93,14 +109,23 @@ export async function resolveSection(state, input, d6, opts = {}) {
   const notes = Object.fromEntries(ROSTER.map((r) => [r.id, []]));
   const extra = [];
 
+  // What each PC rolled this section (for the GM report) and any Hold the line they declared.
+  const hold = Object.fromEntries(PCS.map((p) => [p.id, state.pending[p.id]?.hold ?? 0]));
+  for (const p of PCS) {
+    const pr = state.pending[p.id];
+    if (pr) extra.push(`<b>${esc(p.name)}</b> rolled: ${esc(pr.summary ?? "")}`);
+  }
   for (const pc of PCS) {
     const v = input[pc.id];
-    state.vp[pc.id] = v === undefined || v === null || v === "" ? state.vp[pc.id] : Number(v) || 0;
-    state.sheltered[pc.id] = !!input[`${pc.id}Sheltered`];
+    // No total typed in: use the PC's saved total plus whatever they rolled.
+    state.vp[pc.id] = v === undefined || v === null || v === "" ? state.vp[pc.id] + (state.pending[pc.id]?.vp ?? 0) : Number(v) || 0;
+    const sh = input[`${pc.id}Sheltered`];
+    if (sh !== undefined) state.sheltered[pc.id] = !!sh;
   }
   for (const n of NPCS) {
-    const adj = Number(input[`adj_${n.id}`]) || 0;
-    if (adj) { state.vp[n.id] += adj; notes[n.id].push(`GM adjustment ${signed(adj)}`); }
+    const raw = input[`adj_${n.id}`];
+    const adj = raw === undefined ? (state.pendingAdj[n.id] ?? 0) : Number(raw) || 0;
+    if (adj) { state.vp[n.id] += adj; notes[n.id].push(`Adjustment ${signed(adj)} (a PC action or the GM)`); }
   }
 
   const leadTotal = Math.max(...ROSTER.map((r) => state.vp[r.id]));
@@ -179,14 +204,19 @@ export async function resolveSection(state, input, d6, opts = {}) {
       const foul = !!opts.npcFouls && roll === 1;
       let line = `Attacks ${tgt.name}: d6 ${roll} -> ${hit ? "HIT" : "miss"}`;
       if (hit) {
-        if (tgt.pc) { pcHits.push(tgt); line += ` (${tgt.name} -1 VP unless they Hold the line, DC 30)`; }
-        else { pending[tgt.id] = (pending[tgt.id] || 0) - 1; notes[tgt.id].push(`Hit by ${e.r.name}: -1 VP`); line += " (-1 VP)"; }
+        if (tgt.pc && hold[tgt.id]) {
+          line += ` (${tgt.name} held the line: the attack is cancelled)`;
+          if (hold[tgt.id] === 2) { pending[e.r.id] = (pending[e.r.id] || 0) - 1; line += `; their crit bumps ${e.r.name}: -1 VP`; }
+          hold[tgt.id] = 0;                          // one attack cancelled per Hold the line
+        } else if (tgt.pc) {
+          pending[tgt.id] = (pending[tgt.id] || 0) - 1; pcHits.push(tgt); line += ` (${tgt.name} -1 VP)`;
+        } else { pending[tgt.id] = (pending[tgt.id] || 0) - 1; notes[tgt.id].push(`Hit by ${e.r.name}: -1 VP`); line += " (-1 VP)"; }
       }
       if (foul) { pending[e.r.id] = (pending[e.r.id] || 0) - 1; line += ". FOUL: -1 VP, Hida's mercenaries flag them"; }
       notes[e.r.id].push(line);
     }
     for (const [id, d] of Object.entries(pending)) state.vp[id] += d;
-    for (const p of pcHits) extra.push(`<b>${esc(p.name)}</b> was hit: subtract 1 VP from their total unless they Hold the line (DC 30), or their Spotter cancels it (Perception DC 30). Enter the corrected total before the next section.`);
+    for (const p of pcHits) extra.push(`<b>${esc(p.name)}</b> was hit: -1 VP applied (they didn't Hold the line). If their Spotter cancels it (Perception DC 30), give the point back with the PC stepper.`);
     if (!attackers.length) extra.push("No NPC attacked this lap.");
     if (lap === 4) extra.push("Final Battle: no shelter.");
     for (const n of NPCS) if (!notes[n.id].length) notes[n.id].push("Holds position (no attack)");
@@ -206,7 +236,13 @@ export async function resolveSection(state, input, d6, opts = {}) {
   state.prevRank = levelBefore ? null : Object.fromEntries(standings(before).map((r) => [r.id, r.rank]));
   state.last = { lap, key };
   const finished = lap === 4 && key === "D";
-  if (state.sec === 3) { state.sec = 0; state.lap += 1; } else state.sec += 1;
+  state.pending = {};
+  state.pendingAdj = {};
+  if (state.sec === 3) {
+    state.sec = 0; state.lap += 1;
+    state.used = { violet: [], aji: [] };      // the no-repeat rule is per lap
+    state.favor.spent = 0;
+  } else state.sec += 1;
   return { lap, key, before, notes, extra, finished };
 }
 

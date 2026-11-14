@@ -82,6 +82,45 @@
 .sky-regatta .srt-buttons .srt-go { flex: 2; background: #e10600; border-color: #ff3b30; font-weight: 700; }
 .sky-regatta .srt-buttons .srt-go:hover { background: #ff1a10; }
 
-.sky-regatta .srt-show { width: 100%; margin-top: 10px; background: #1b1b27; color: #fff; border: 1px solid #3a3a4d; line-height: 1.8; }
-.sky-regatta .srt-show:hover { background: #33334a; }
-.sky-regatta .srt-show + .srt-buttons { margin-top: 6px; }
+
+.sky-regatta .srt-buttons.srt-two { margin-top: 10px; }
+.sky-regatta .srt-show { background: #1b1b27 !important; }
+.sky-regatta .srt-buttons + .srt-buttons { margin-top: 6px; }
+
+/* Skills used this lap, drake and favor (everyone sees this) */
+.sky-regatta .srt-status { padding: 8px 10px; background: #101018; border-top: 1px solid #262633; text-transform: none; letter-spacing: 0; }
+.sky-regatta .srt-status-title { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; color: #7d7d90; margin-bottom: 4px; }
+.sky-regatta .srt-used { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 3px 0; font-size: 0.8rem; }
+.sky-regatta .srt-used .who { font-weight: 700; color: #f0e0ff; min-width: 3.4rem; }
+.sky-regatta .srt-used .drake { font-size: 0.68rem; padding: 1px 6px; border-radius: 3px; background: #262633; color: #c8c8d4; }
+.sky-regatta .srt-used .drake.d1 { background: #5a4a14; color: #ffd966; }
+.sky-regatta .srt-used .drake.d2 { background: #5a2a14; color: #ffa366; }
+.sky-regatta .srt-used .drake.d3 { background: #5a1420; color: #ff6680; }
+.sky-regatta .srt-used .chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.sky-regatta .srt-used .chip { background: #1b1b27; border: 1px solid #3a3a4d; border-radius: 3px; padding: 0 6px; color: #8a8a9a; }
+.sky-regatta .srt-used .chip s { text-decoration-thickness: 2px; }
+.sky-regatta .srt-used .none { color: #6b6b7a; font-style: italic; font-size: 0.75rem; }
+.sky-regatta .srt-used .rolled-badge { margin-left: auto; font-size: 0.65rem; text-transform: uppercase; color: #3ddc84; border: 1px solid #3ddc84; border-radius: 3px; padding: 0 5px; }
+.sky-regatta .srt-line { margin-top: 6px; font-size: 0.75rem; color: #9a9aaa; }
+.sky-regatta .srt-line b { color: #fff; }
+.sky-regatta .srt-rollcheck { width: 100%; margin-top: 8px; background: #e10600; color: #fff; border: 1px solid #ff3b30; font-weight: 700; line-height: 1.9; }
+.sky-regatta .srt-rollcheck:hover { background: #ff1a10; }
+.sky-regatta .srt-rolled { font-size: 0.7rem; color: #3ddc84; max-width: 16rem; }
+.sky-regatta .srt-rolled.none { color: #6b6b7a; }
+.sky-regatta .srt-link { background: none; border: none; color: #ff8a8a; text-decoration: underline; cursor: pointer; padding: 0 4px; font-size: 0.7rem; }
+.sky-regatta .srt-tune-grid { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.sky-regatta .srt-tune-row { display: flex; align-items: center; gap: 6px; }
+.sky-regatta .srt-tune-row span { flex: 1; }
+.sky-regatta .srt-tune-row .srt-step-btn { width: 1.7rem; height: 1.5rem; border-radius: 3px; }
+
+/* Roll dialog and chat cards */
+.srt-dialog { font-size: 0.85rem; }
+.srt-dialog fieldset { margin: 6px 0; padding: 4px 8px; }
+.srt-dialog .grp { margin: 6px 0; }
+.srt-dialog .grp-title { font-weight: 700; }
+.srt-dialog .grp-desc { font-size: 0.75rem; opacity: 0.8; margin-bottom: 2px; }
+.srt-dialog label.opt { display: block; margin-left: 6px; }
+.srt-dialog label.opt.used { opacity: 0.55; }
+.srt-dialog .narrows { margin: 4px 0 0 6px; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 0.8rem; }
+.srt-dialog .note { font-size: 0.72rem; opacity: 0.75; }
+.srt-dc-card button { cursor: pointer; }

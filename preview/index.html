@@ -7,13 +7,19 @@
 <link rel="stylesheet" href="../styles/tower.css">
 <style>
   body { margin: 0; background: #2a2a2e; font-family: system-ui, sans-serif; color: #ddd; }
-  .stage { display: flex; gap: 24px; padding: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .stage { display: flex; gap: 20px; padding: 16px; flex-wrap: wrap; align-items: flex-start; }
   .win { width: 420px; border: 1px solid #000; box-shadow: 0 4px 16px #000a; }
   .win-title { background: #111; padding: 6px 10px; font-size: 13px; color: #ccc; }
   .window-content { display: block; }
-  .note { max-width: 320px; font-size: 13px; line-height: 1.4; }
+  .note { max-width: 300px; font-size: 13px; line-height: 1.4; }
   #warn { color: #ff8a8a; font-size: 13px; min-height: 1.2em; margin-top: 6px; }
-  button, input { font: inherit; }
+  #chat { width: 340px; background: #1c1c22; border: 1px solid #000; padding: 8px; font-size: 13px; max-height: 1000px; overflow: auto; color: #ddd; }
+  #chat .msg { border-bottom: 1px solid #333; padding: 6px 0; }
+  #chat .msg.gm { background: #2a2233; padding: 6px; }
+  #chat .who { font-size: 11px; color: #9a9aaa; }
+  dialog { background: #2b2b33; color: #eee; border: 1px solid #000; width: 540px; max-height: 90vh; overflow: auto; }
+  dialog .bar { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+  button, input, select { font: inherit; }
 </style>
 </head>
 <body>
@@ -23,74 +29,145 @@
     <div id="warn"></div>
   </div>
   <div>
-    <div class="win sky-regatta"><div class="win-title">Sky Regatta (player view)</div><div class="window-content" id="player"></div></div>
+    <div class="win sky-regatta"><div class="win-title">Sky Regatta (player view) &mdash; playing as
+      <select id="as"><option value="violet">Violet</option><option value="aji">Aji</option></select></div>
+      <div class="window-content" id="player"></div></div>
+  </div>
+  <div>
+    <div class="win-title" style="width:340px">Chat</div>
+    <div id="chat"></div>
   </div>
   <div class="note">
-    Preview harness: the same template, CSS, view helpers and rules engine as the module, with Foundry's chrome faked.
-    Use the GM controls on the left; the right window shows what players see.
+    Preview harness: the same template, CSS, view helpers and rules (engine and rolls) as the module, with Foundry's windows and chat faked.
   </div>
 </div>
+<dialog id="dlg"><div id="dlgbody"></div><div class="bar"><button id="dlgCancel" type="button">Cancel</button><button id="dlgRoll" type="button">Roll!</button></div></dialog>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/handlebars.js/4.7.8/handlebars.min.js"></script>
 <script type="module">
-import { freshState, resolveSection, undo } from "../scripts/engine.mjs";
+import { ROSTER, SECTIONS, freshState, resolveSection, undo, buildReport } from "../scripts/engine.mjs";
 import { towerContext, validateInput, readoutFor } from "../scripts/view.mjs";
 import { captureTops, playSlides } from "../scripts/animate.mjs";
+import {
+  SKILL_LABEL, sectionMenu, validatePcRequest, computeMod, applyPcCheck, applyNarrows, clearPcRoll, eligibleTargets,
+  planNpcDice, degreeOf, buildNpcDiceHtml, buildDcCardHtml, buildPcRollHtml, buildNarrowsHtml, buildDialogHtml,
+} from "../scripts/rolls.mjs";
 
 const tpl = Handlebars.compile(await (await fetch("../templates/tower.hbs")).text());
 let state = freshState();
 const d6 = async () => 1 + Math.floor(Math.random() * 6);
-const gm = document.getElementById("gm");
+const d20 = () => 1 + Math.floor(Math.random() * 20);
+const gm = document.getElementById("gm"), player = document.getElementById("player"), chat = document.getElementById("chat"), warn = document.getElementById("warn");
 const unlocked = () => !!gm.querySelector("input[name='unlock']")?.checked;
+const say = (html, who = "", gmOnly = false) => { chat.insertAdjacentHTML("afterbegin", `<div class="msg ${gmOnly ? "gm" : ""}"><div class="who">${who}${gmOnly ? " (whisper to GM)" : ""}</div>${html}</div>`); };
+const entry = (id) => ROSTER.find((r) => r.id === id);
+const skillMod = (e, sk) => e.skills?.[sk] ?? 0;
 
 function render() {
-  const player = document.getElementById("player");
   const prevGm = captureTops(gm), prevPlayer = captureTops(player);
-  gm.innerHTML = tpl(towerContext(state, { isGM: true }));
-  player.innerHTML = tpl(towerContext(state, { isGM: false }));
+  gm.innerHTML = tpl(towerContext(state, { isGM: true, canRoll: true }));
+  player.innerHTML = tpl(towerContext(state, { isGM: false, canRoll: true }));
   window.__slides = playSlides(player, prevPlayer) + playSlides(gm, prevGm);
-  for (const input of gm.querySelectorAll("input[data-kind='pc']")) input.addEventListener("input", () => updateHint(input));
+  for (const input of gm.querySelectorAll("input[data-kind='pc']")) input.addEventListener("input", () => updateReadout(input));
 }
-function updateHint(input) {
+function updateReadout(input) {
   const { total, ok } = readoutFor(Number(input.dataset.base), input.value, Number(input.dataset.min), Number(input.dataset.max));
   gm.querySelector(`[data-total-for="${input.dataset.id}"]`).textContent = total;
   gm.querySelector(`[data-pc="${input.dataset.id}"]`).classList.toggle("bad", !ok);
   gm.querySelector(`[data-hint-for="${input.dataset.id}"]`).classList.toggle("bad", !ok);
 }
-gm.addEventListener("click", async (ev) => {
+
+// ---- NPC dice show ----
+function npcDice(report) {
+  const npcs = ROSTER.filter((r) => !r.pc);
+  const attackers = new Set(npcs.filter((n) => (report.notes[n.id] ?? []).some((t) => t.startsWith("Attacks "))).map((n) => n.id));
+  const rows = planNpcDice(npcs, report.lap, report.key, skillMod, attackers).map((p) => {
+    const nat = d20(); const total = nat + p.mod;
+    return { ...p, nat, total, degree: degreeOf(total, p.dc, nat) };
+  });
+  say(buildNpcDiceHtml(report.lap, report.key, rows), "The field");
+}
+
+// ---- player roll dialog ----
+async function rollDialog() {
+  const pcId = document.getElementById("as").value, e = entry(pcId);
+  const key = SECTIONS[state.sec];
+  if (state.pending[pcId]) { warn.textContent = `${e.name} has already rolled this section.`; return; }
+  const menu = sectionMenu(state.lap, key);
+  const mods = Object.fromEntries(Object.keys(SKILL_LABEL).map((s) => [s, skillMod(e, s)]));
+  const targets = eligibleTargets(state, pcId).filter((t) => !(key === "C" && state.lap !== 4 && state.sheltered[t.id]));
+  document.getElementById("dlgbody").innerHTML = `<h3 style="margin:0 0 6px 0">${e.name}: ${menu.title} (Lap ${state.lap})</h3>` + buildDialogHtml(state, pcId, menu, { mods, targets, key });
+  const dlg = document.getElementById("dlg");
+  dlg.showModal();
+  const result = await new Promise((resolve) => {
+    document.getElementById("dlgCancel").onclick = () => { dlg.close(); resolve(null); };
+    document.getElementById("dlgRoll").onclick = () => {
+      const fd = new FormData(dlg.querySelector("form"));
+      dlg.close();
+      resolve({ choiceId: fd.get("choice"), lineId: fd.get("line") || undefined, target: fd.get("target") || undefined, bench: Number(fd.get("bench") || 0), spendFavor: fd.get("spendFavor") === "on", narrows: fd.getAll("narrows") });
+    };
+  });
+  if (!result) return;
+  const request = { pcId, lap: state.lap, key, ...result };
+  const v = validatePcRequest(state, request);
+  if (!v.ok) { warn.textContent = v.error; return; }
+  if (v.choice.special === "narrows") {
+    const rolls = [...new Set(request.narrows)].map((skill) => ({ skill, nat: d20(), mod: computeMod(state, pcId, "N", { bench: request.bench }, skillMod(e, skill)).total }));
+    const res = applyNarrows(state, request, rolls);
+    if (!res.ok) { warn.textContent = res.error; return; }
+    say(buildNarrowsHtml({ pcName: e.name, checks: res.checks, vp: res.pending.vp, notes: res.pending.notes }), e.name);
+  } else {
+    const m = computeMod(state, pcId, v.key, request, skillMod(e, v.choice.skill));
+    const nat = d20();
+    const res = applyPcCheck(state, request, { nat, mod: m.total, parts: m.parts });
+    if (!res.ok) { warn.textContent = res.error; return; }
+    const p = res.pending;
+    say(buildPcRollHtml({ pcName: e.name, choice: v.choice, lineId: v.lineId, dc: v.dc, nat, parts: m.parts, total: p.total, degree: p.degree, vp: p.vp, notes: p.notes }), e.name);
+  }
+  render();
+}
+
+// ---- clicks ----
+function onClick(ev) {
+  const dcBtn = ev.target.closest("[data-srt-action='roll']");
+  if (dcBtn) { rollDialog(); return; }
   const btn = ev.target.closest("button[data-action]");
   if (!btn) return;
   const action = btn.dataset.action;
-  document.getElementById("warn").textContent = "";
-  if (action === "show") { document.getElementById("warn").textContent = "(Preview: in Foundry this opens the window on every player's screen.)"; return; }
+  warn.textContent = "";
   if (action === "step") {
     const input = gm.querySelector(`input[name="${btn.dataset.for}"]`);
     let v = (Number(input.value) || 0) + Number(btn.dataset.dir);
     if (!unlocked()) v = Math.min(Number(input.dataset.max), Math.max(Number(input.dataset.min), v));
     input.value = v; input.dispatchEvent(new Event("input", { bubbles: true }));
-    return;
+  } else if (action === "rollCheck") rollDialog();
+  else if (action === "postDcs") { say(buildDcCardHtml(state, state.lap, SECTIONS[state.sec]), "Sky Regatta"); }
+  else if (action === "clearRoll") { clearPcRoll(state, btn.dataset.pc); render(); }
+  else if (action === "drake") { state.drake[btn.dataset.pc] = Math.min(3, Math.max(0, state.drake[btn.dataset.pc] + Number(btn.dataset.dir))); render(); }
+  else if (action === "favor") { state.favor.party = Math.max(0, state.favor.party + Number(btn.dataset.dir)); render(); }
+  else if (action === "show") warn.textContent = "(Preview: in Foundry this opens the window on every player's screen.)";
+  else if (action === "roll") doRoll();
+  else if (action === "undo") { const p = undo(state); if (p) state = p; render(); }
+  else if (action === "reset") { state = freshState(); chat.innerHTML = ""; render(); }
+}
+async function doRoll() {
+  const input = {};
+  for (const el of gm.querySelectorAll(".srt-controls input[name]")) {
+    if (el.name === "unlock") continue;
+    if (el.name.startsWith("gain_")) { input[el.dataset.id] = Number(el.dataset.base) + (Number(el.value) || 0); continue; }
+    input[el.name] = el.type === "checkbox" ? el.checked : (el.value === "" ? undefined : Number(el.value));
   }
-  if (action === "roll") {
-    const input = {};
-    for (const el of gm.querySelectorAll(".srt-controls input[name]")) {
-      if (el.name === "unlock") continue;
-      if (el.name.startsWith("gain_")) { input[el.dataset.id] = Number(el.dataset.base) + (Number(el.value) || 0); continue; }
-      input[el.name] = el.type === "checkbox" ? el.checked : (el.value === "" ? undefined : Number(el.value));
-    }
-    const problem = validateInput(state, input, unlocked());
-    if (problem) { document.getElementById("warn").textContent = problem; return; }
-    await resolveSection(state, input, d6);
-  } else if (action === "undo") { const p = undo(state); if (p) state = p; }
-  else if (action === "reset") { state = freshState(); }
+  const problem = validateInput(state, input, unlocked());
+  if (problem) { warn.textContent = problem; return; }
+  const report = await resolveSection(state, input, d6);
+  npcDice(report);
+  say(buildReport(state, report), "Sky Regatta", true);
   render();
-});
-window.__state = () => state;
-window.__demo = async (n) => { // fast-forward n sections with plausible PC totals
-  for (let i = 0; i < n; i++) {
-    const input = { violet: state.vp.violet + Math.floor(Math.random() * 4), aji: state.vp.aji + Math.floor(Math.random() * 4) };
-    await resolveSection(state, input, d6);
-  }
-  render();
-};
+}
+gm.addEventListener("click", onClick);
+player.addEventListener("click", onClick);
+chat.addEventListener("click", onClick);
+window.__api = { state: () => state, rollDialog, doRoll, render };
 render();
 </script>
 </body>

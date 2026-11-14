@@ -12,6 +12,17 @@ An F1-style timing tower for the Sky Regatta race (Foundry VTT v13).
 
 The rules live in `scripts/engine.mjs` (pure JavaScript, unit tested). The riders, ratings, personalities and team colors are in the `ROSTER` list at the top of that file.
 
+## Dice, DCs and player rolls (v0.4)
+
+- **NPC d20s:** when you press **Roll next section**, the module also rolls a real d20 for each NPC rider against a DC, using their PF2e skill modifiers (looked up on the actor by name, with the roster numbers as a fallback). Personality sets the line (aggressive: All-out, cautious: Hold pace). It is theatre: the d6 table still decides their VP. The rolls go in one public chat message, so Dice So Nice animates them for everyone. Two world settings: roll them at all, and show them to players or only the GM.
+- **Post DCs to chat:** the GM button posts the current section's DCs, with a **Roll my check** button.
+- **Roll my check:** opens a picker (also a button at the bottom of the tower). Players pick a line and an approach; every choice says what it does. Skills already used this lap are struck through and disabled (the no-repeat rule), and shown under the standings for everyone. The roll is made on the GM's client over the module socket, so the GM must be connected.
+- **Modifiers:** the actor's skill, the party's +2, drake condition (Winded -1, Strained -2), bench help (+1 or +2 circumstance, the best one counts, a carried +1 from Hold the line included), and optionally 1 Favor for +1 (max 2 a lap).
+- **Results:** the degree of success is the PF2e one (beat by 10 for a crit, miss by 10 for a crit failure, natural 20 and 1 move it a step). It turns into VP, Favor, Influence, drake rungs and rival VP exactly as the plan's tables say. The GM's PC steppers are pre-filled with what each PC rolled; **clear roll** lets someone roll again.
+- **Battle:** Bump, Cut off, Distract and Draft take 1 VP from the target when they land (queued as an NPC adjustment). Hold the line cancels one NPC attack on that PC (a crit also bumps the attacker). NPC hits on a PC now subtract the VP automatically.
+- **The Narrows (lap 2):** three checks with three different skills, strikes and shelter handled for you.
+- **GM tweaks:** drake rung and party Favor steppers for pit actions and rulings.
+
 ## Install
 
 In Foundry: Add-on Modules, Install Module, paste the manifest URL:

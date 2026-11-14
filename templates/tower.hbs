@@ -28,6 +28,24 @@
     {{/each}}
   </ol>
 
+  {{#if showStatus}}
+  <div class="srt-status">
+    <div class="srt-status-title">Skills used this lap</div>
+    {{#each riders}}
+    <div class="srt-used">
+      <span class="who">{{name}}</span>
+      <span class="drake d{{drakeRung}}">Drake: {{drake}}</span>
+      <span class="chips">
+        {{#if noneUsed}}<span class="none">nothing used yet</span>{{else}}{{#each used}}<span class="chip"><s>{{this}}</s></span>{{/each}}{{/if}}
+      </span>
+      {{#if rolled}}<span class="rolled-badge">rolled</span>{{/if}}
+    </div>
+    {{/each}}
+    <div class="srt-line">Party Favor <b>{{status.favor}}</b> <i>({{status.favorSpent}}/2 spent this lap)</i> &nbsp;·&nbsp; Influence: Qiu May <b>{{status.qiu}}</b>, Hida <b>{{status.hida}}</b></div>
+    {{#if canRoll}}<button type="button" class="srt-rollcheck" data-action="rollCheck"><i class="fa-solid fa-dice-d20"></i> Roll my check</button>{{/if}}
+  </div>
+  {{/if}}
+
   {{#if isGM}}
   <footer class="srt-controls">
     <div class="srt-next">Next: <b>{{nextLabel}}</b></div>
@@ -39,13 +57,18 @@
         <span class="srt-pcrow">
           <span class="srt-step">
             <button type="button" class="srt-step-btn" data-action="step" data-dir="-1" data-for="gain_{{id}}" tabindex="-1">-</button>
-            <input type="number" name="gain_{{id}}" value="0" data-id="{{id}}" data-base="{{base}}" data-min="{{min}}" data-max="{{max}}" min="{{min}}" max="{{max}}" data-kind="pc">
+            <input type="number" name="gain_{{id}}" value="{{gain}}" data-id="{{id}}" data-base="{{base}}" data-min="{{min}}" data-max="{{max}}" min="{{min}}" max="{{max}}" data-kind="pc">
             <button type="button" class="srt-step-btn" data-action="step" data-dir="1" data-for="gain_{{id}}" tabindex="-1">+</button>
           </span>
           <span class="srt-equals">adding</span>
-          <span class="srt-newtotal">= <b data-total-for="{{id}}">{{base}}</b> VP</span>
+          <span class="srt-newtotal">= <b data-total-for="{{id}}">{{newTotal}}</b> VP</span>
         </span>
         <span class="srt-hint" data-hint-for="{{id}}">allowed {{min}} to {{max}} this section</span>
+        {{#if hasPending}}
+        <span class="srt-rolled">{{rolledText}} <button type="button" class="srt-link" data-action="clearRoll" data-pc="{{id}}">clear roll</button></span>
+        {{else}}
+        <span class="srt-rolled none">hasn't rolled yet</span>
+        {{/if}}
       </div>
       {{/each}}
     </div>
@@ -56,24 +79,40 @@
       {{/each}}
     </div>
     {{/if}}
-    <details class="srt-adj">
-      <summary>NPC adjustments (for example -1 if a PC bumped them)</summary>
+    <details class="srt-adj" {{#if adjOpen}}open{{/if}}>
+      <summary>NPC adjustments (a PC's Bump or Distract lands here)</summary>
       <div class="srt-adj-grid">
         {{#each adjustable}}
         <div class="srt-field">
           <span class="srt-label">{{name}}</span>
           <span class="srt-step">
             <button type="button" class="srt-step-btn" data-action="step" data-dir="-1" data-for="adj_{{id}}" tabindex="-1">-</button>
-            <input type="number" name="adj_{{id}}" value="0" data-base="0" data-min="{{min}}" data-max="{{max}}" min="{{min}}" max="{{max}}" data-kind="adj">
+            <input type="number" name="adj_{{id}}" value="{{value}}" data-base="0" data-min="{{min}}" data-max="{{max}}" min="{{min}}" max="{{max}}" data-kind="adj">
             <button type="button" class="srt-step-btn" data-action="step" data-dir="1" data-for="adj_{{id}}" tabindex="-1">+</button>
           </span>
         </div>
         {{/each}}
       </div>
     </details>
+    <details class="srt-adj srt-tune">
+      <summary>Drake and Favor (pit actions, rulings)</summary>
+      <div class="srt-tune-grid">
+        {{#each riders}}
+        <div class="srt-tune-row"><span>{{name}}'s drake: <b>{{drake}}</b></span>
+          <button type="button" class="srt-step-btn" data-action="drake" data-pc="{{id}}" data-dir="-1" title="Raise a rung">-</button>
+          <button type="button" class="srt-step-btn" data-action="drake" data-pc="{{id}}" data-dir="1" title="Drop a rung">+</button></div>
+        {{/each}}
+        <div class="srt-tune-row"><span>Party Favor: <b>{{status.favor}}</b></span>
+          <button type="button" class="srt-step-btn" data-action="favor" data-dir="-1">-</button>
+          <button type="button" class="srt-step-btn" data-action="favor" data-dir="1">+</button></div>
+      </div>
+    </details>
     <label class="srt-unlock"><input type="checkbox" name="unlock"> Unlock limits (allowed this section: {{limitText}})</label>
     {{/unless}}
-    <button type="button" class="srt-show" data-action="show"><i class="fa-solid fa-tv"></i> Show to players</button>
+    <div class="srt-buttons srt-two">
+      <button type="button" class="srt-show" data-action="postDcs"><i class="fa-solid fa-comment-dots"></i> Post DCs to chat</button>
+      <button type="button" class="srt-show" data-action="show"><i class="fa-solid fa-tv"></i> Show to players</button>
+    </div>
     <div class="srt-buttons">
       {{#unless finished}}<button type="button" class="srt-go" data-action="roll"><i class="fa-solid fa-dice"></i> Roll next section</button>{{/unless}}
       <button type="button" data-action="undo"><i class="fa-solid fa-rotate-left"></i> Undo</button>

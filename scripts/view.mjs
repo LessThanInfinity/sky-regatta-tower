@@ -4,10 +4,13 @@
 import {
   ROSTER, GAP_CAP, SECTION_NAME, OBSTACLE,
   standings, nextSection, isFinished, signed, sectionLimits, ADJ_LIMITS,
+  normalizeState,
 } from "./engine.mjs";
+import { SKILL_LABEL, DRAKE_STATES } from "./rolls.mjs";
 
 /** Everything the tower template needs. */
-export function towerContext(state, { isGM = false, portraitFor = null } = {}) {
+export function towerContext(state, { isGM = false, portraitFor = null, canRoll = false } = {}) {
+  normalizeState(state);
   const rows = standings(state.vp).map((r) => {
     const d = state.delta[r.id] ?? 0;
     const prev = state.prevRank?.[r.id];
@@ -41,14 +44,41 @@ export function towerContext(state, { isGM = false, portraitFor = null } = {}) {
     isGM,
     showShelter: state.lap === 2,
     limitText,
-    pcs: ROSTER.filter((r) => r.pc).map((r) => ({
-      id: r.id, name: r.name,
-      base: state.vp[r.id],                 // total before this section
-      min: lim ? lim.min : 0,               // allowed change this section
-      max: lim ? lim.max : 0,
-      sheltered: !!state.sheltered[r.id],
+    pcs: ROSTER.filter((r) => r.pc).map((r) => {
+      const pend = state.pending[r.id];
+      const gain = pend?.vp ?? 0;
+      return {
+        id: r.id, name: r.name,
+        base: state.vp[r.id],                 // total before this section
+        gain, newTotal: state.vp[r.id] + gain,
+        min: lim ? lim.min : 0,               // allowed change this section
+        max: lim ? lim.max : 0,
+        sheltered: !!state.sheltered[r.id],
+        rolledText: pend ? pend.summary : "",
+        hasPending: !!pend,
+      };
+    }),
+    adjustable: ROSTER.filter((r) => !r.pc).map((r) => ({
+      id: r.id, name: r.name, min: ADJ_LIMITS.min, max: ADJ_LIMITS.max, value: state.pendingAdj[r.id] ?? 0,
     })),
-    adjustable: ROSTER.filter((r) => !r.pc).map((r) => ({ id: r.id, name: r.name, min: ADJ_LIMITS.min, max: ADJ_LIMITS.max })),
+    adjOpen: Object.values(state.pendingAdj).some((v) => v),
+    canRoll,
+    // shown to everyone at the bottom of the tower
+    riders: ROSTER.filter((r) => r.pc).map((r) => ({
+      id: r.id, name: r.name,
+      used: (state.used[r.id] ?? []).map((sk) => SKILL_LABEL[sk] ?? sk),
+      noneUsed: !(state.used[r.id] ?? []).length,
+      drake: DRAKE_STATES[state.drake[r.id] ?? 0],
+      drakeRung: state.drake[r.id] ?? 0,
+      rolled: !!state.pending[r.id],
+    })),
+    status: {
+      favor: state.favor.party ?? 0,
+      favorSpent: state.favor.spent ?? 0,
+      qiu: state.influence.qiu ?? 0,
+      hida: state.influence.hida ?? 0,
+    },
+    showStatus: !finished,
   };
 }
 

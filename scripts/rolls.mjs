@@ -294,48 +294,57 @@ export function planNpcDice(npcs, lap, key, modFor, attackerIds = new Set()) {
 }
 
 // ---------- HTML for chat cards and dialogs ----------
-const sectionTitle = (lap, key) => `Lap ${lap}, ${key} · ${SECTION_NAME[key]}${key === "B" ? ` (${OBSTACLE[lap]})` : ""}`;
-
-export function buildNpcDiceHtml(lap, key, rows) {
-  const lines = rows.map((r) => {
-    const col = DEGREE_COLOR[r.degree];
-    return `<div style="margin:2px 0"><b>${esc(r.name)}</b> <small>${esc(r.lineLabel)}, ${esc(SKILL_LABEL[r.skill])} ${signed(r.mod)}, DC ${r.dc}</small><br>`
-      + `&nbsp;&nbsp;d20 ${r.nat} ${signed(r.mod)} = <b>${r.total}</b> <span style="color:${col};font-weight:bold">${DEGREE_LABEL[r.degree]}</span></div>`;
-  }).join("");
-  return `<h4 style="margin:0 0 4px 0">The field rolls: ${esc(sectionTitle(lap, key))}</h4>${lines}`;
-}
-
-export function buildDcCardHtml(state, lap, key) {
-  const menu = sectionMenu(lap, key);
-  const rows = [];
-  if (menu.type === "lane") {
-    for (const c of menu.choices) rows.push(`<li><b>${esc(c.group)}</b> (${SKILL_LABEL[c.skill]}): ${LINES[c.line].label}, <b>DC ${LINES[c.line].dc}</b>, ${LINES[c.line].vp[0]} VP (crit ${LINES[c.line].vp[1]})</li>`);
-  } else if (menu.type === "battle") {
-    rows.push(`<li>Battle actions: <b>DC ${BATTLE_DC}</b> (Bump, Cut off, Distract, Draft, Hold the line)</li>`);
-  } else {
-    for (const L of Object.values(LINES)) rows.push(`<li>${L.label}: <b>DC ${L.dc}</b>, ${L.vp[0]} VP (crit ${L.vp[1]})</li>`);
-    if (menu.type === "hall") rows.push(`<li>The Narrows: three checks at <b>DC ${NARROWS_DC}</b>, three different skills</li>`);
-  }
-  const used = ["violet", "aji"].map((id) => `${riderName(id)}: ${(state.used?.[id] ?? []).map((s) => SKILL_LABEL[s]).join(", ") || "nothing yet"}`).join(" · ");
-  return `<div class="srt-dc-card"><h3 style="margin:0 0 4px 0">Sky Regatta: ${esc(sectionTitle(lap, key))}</h3><ul style="margin:0 0 6px 16px">${rows.join("")}</ul>`
-    + (menu.type === "battle" ? "" : `<p style="margin:0 0 6px 0"><small>Skills already used this lap (no repeats): ${esc(used)}</small></p>`)
-    + `<button type="button" data-srt-action="roll" data-lap="${lap}" data-key="${key}"><i class="fa-solid fa-dice-d20"></i> Roll my check</button></div>`;
-}
-
+const sectionTitle = (lap, key) => `Lap ${lap} · ${key} · ${SECTION_NAME[key]}${key === "B" ? ` · ${OBSTACLE[lap]}` : ""}`;
+const cardHead = (title, sub = "") => `<div class="srt-card-head"><span class="badge">SKY REGATTA</span><span class="title">${esc(title)}</span>${sub ? `<span class="sub">${esc(sub)}</span>` : ""}</div>`;
+const degPill = (degree) => `<span class="deg ${degree}">${DEGREE_LABEL[degree]}</span>`;
 const vpLine = (vp, auto) => (auto ? `<b>${signed(vp)} VP</b>` : `<b>Suggested: ${signed(vp)} VP</b> <small>(the GM sets the VP)</small>`);
 
-export function buildPcRollHtml({ pcName, choice, lineId, dc, nat, parts, total, degree, vp, notes, auto = true }) {
-  const col = DEGREE_COLOR[degree];
-  const bonus = parts.map((p) => `${signed(p.value)} ${esc(p.label)}`).join(", ");
-  const how = lineId ? `${LINES[lineId].label}, DC ${dc}` : `DC ${dc}`;
-  return `<h4 style="margin:0 0 4px 0">${esc(pcName)}: ${esc(choice.group)} <small>(${esc(SKILL_LABEL[choice.skill] ?? choice.skill)})</small></h4>`
-    + `<div>${esc(how)}</div><div>d20 ${nat} (${bonus}) = <b>${total}</b> <span style="color:${col};font-weight:bold">${DEGREE_LABEL[degree]}</span></div>`
-    + `<div>${vpLine(vp, auto)}${notes.length ? ` · ${notes.map(esc).join(" · ")}` : ""}</div>`;
+/** The six NPC d20s for the show: one tidy row per rider. */
+export function buildNpcDiceHtml(lap, key, rows) {
+  const lines = rows.map((r) => `<div class="frow"><div class="top"><span class="who">${esc(r.name)}</span>${degPill(r.degree)}</div>`
+    + `<div class="det">${esc(r.lineLabel)} · ${esc(SKILL_LABEL[r.skill])} ${signed(r.mod)} · DC ${r.dc}</div>`
+    + `<div class="calc">d20 <b>${r.nat}</b> ${signed(r.mod)} = <b>${r.total}</b></div></div>`).join("");
+  return `<div class="srt-card srt-field">${cardHead("The field rolls", sectionTitle(lap, key))}${lines}</div>`;
 }
 
+/** The DCs for the section as three compact columns, with a button to roll. */
+export function buildDcCardHtml(state, lap, key) {
+  const menu = sectionMenu(lap, key);
+  const col = (cls, name, sub, dc, vp) => `<div class="col ${cls}"><span class="nm">${esc(name)}</span><span class="sk">${esc(sub)}</span><span class="dc">DC ${dc}</span><span class="vp"><b>${vp[0]}</b> VP · crit <b>${vp[1]}</b></span></div>`;
+  let cols = "", extra = "";
+  if (menu.type === "lane") {
+    cols = menu.choices.map((c) => col(c.line, c.group, SKILL_LABEL[c.skill], LINES[c.line].dc, LINES[c.line].vp)).join("");
+  } else if (menu.type === "battle") {
+    extra = `<div class="banner"><span class="dc">DC ${BATTLE_DC}</span><span>Bump · Cut off · Distract · Draft · Hold the line</span></div>`;
+  } else {
+    cols = Object.values(LINES).map((L) => col(L.id, L.label, L.id === "safe" ? "Steady" : L.id === "standard" ? "The usual" : "High stakes", L.dc, L.vp)).join("");
+    if (menu.type === "hall") extra = `<div class="banner"><span class="dc">DC ${NARROWS_DC}</span><span>The Narrows: three checks, three different skills</span></div>`;
+    if (lap === 4) extra = `<div class="banner"><span>Pick a patron: Qiu May's silk (Nature, Acrobatics) or Hida's steel (Athletics, Intimidation)</span></div>`;
+  }
+  const used = ["violet", "aji"].map((id) => {
+    const list = (state.used?.[id] ?? []).map((sk) => `<span class="chip"><s>${SKILL_LABEL[sk]}</s></span>`).join("");
+    return `<div class="urow"><span class="who">${riderName(id)}</span>${list || "<i>nothing used yet</i>"}</div>`;
+  }).join("");
+  return `<div class="srt-card srt-dc">${cardHead(sectionTitle(lap, key))}`
+    + (cols ? `<div class="srt-dc-cols">${cols}</div>` : "") + extra
+    + (menu.type === "battle" ? "" : `<div class="srt-card-foot"><span class="cap">Skills used this lap (no repeats)</span>${used}</div>`)
+    + `<button type="button" class="srt-card-btn" data-srt-action="roll" data-lap="${lap}" data-key="${key}"><i class="fa-solid fa-dice-d20"></i> Roll my check</button></div>`;
+}
+
+/** A PC's roll: the big total, the degree, and what it does. */
+export function buildPcRollHtml({ pcName, choice, lineId, dc, nat, parts, total, degree, vp, notes, auto = true }) {
+  const bonus = parts.map((p) => `${signed(p.value)} ${esc(p.label)}`).join(", ");
+  const how = lineId ? `${LINES[lineId].label} · DC ${dc}` : `DC ${dc}`;
+  return `<div class="srt-card srt-roll">${cardHead(pcName, `${choice.group} (${SKILL_LABEL[choice.skill] ?? choice.skill})`)}`
+    + `<div class="rollrow"><span class="big">${total}</span><span class="calc">d20 <b>${nat}</b> (${bonus})<br>${esc(how)}</span>${degPill(degree)}</div>`
+    + `<div class="vpline">${vpLine(vp, auto)}${notes.length ? `<br><small>${notes.map(esc).join(" · ")}</small>` : ""}</div></div>`;
+}
+
+/** The Narrows: three checks. */
 export function buildNarrowsHtml({ pcName, checks, vp, notes, auto = true }) {
-  const rows = checks.map((c) => `<div>${esc(SKILL_LABEL[c.skill])}: d20 ${c.nat} ${signed(c.mod)} = <b>${c.total}</b> <span style="color:${DEGREE_COLOR[c.degree]};font-weight:bold">${DEGREE_LABEL[c.degree]}</span></div>`).join("");
-  return `<h4 style="margin:0 0 4px 0">${esc(pcName)}: The Narrows <small>(DC ${NARROWS_DC})</small></h4>${rows}<div>${vpLine(vp, auto)} · ${notes.map(esc).join(" · ")}</div>`;
+  const rows = checks.map((c) => `<div class="nrow"><span class="who">${esc(SKILL_LABEL[c.skill])}</span><span class="calc">d20 <b>${c.nat}</b> ${signed(c.mod)} = <b>${c.total}</b></span>${degPill(c.degree)}</div>`).join("");
+  return `<div class="srt-card srt-roll">${cardHead(pcName, `The Narrows (DC ${NARROWS_DC})`)}${rows}`
+    + `<div class="vpline">${vpLine(vp, auto)}<br><small>${notes.map(esc).join(" · ")}</small></div></div>`;
 }
 
 /** What each line pays, for the three line cards. */

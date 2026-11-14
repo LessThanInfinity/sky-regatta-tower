@@ -73,3 +73,7 @@
 .sky-regatta .srt-buttons button:hover { background: #33334a; }
 .sky-regatta .srt-buttons .srt-go { flex: 2; background: #e10600; border-color: #ff3b30; font-weight: 700; }
 .sky-regatta .srt-buttons .srt-go:hover { background: #ff1a10; }
+
+.sky-regatta .srt-show { width: 100%; margin-top: 10px; background: #1b1b27; color: #fff; border: 1px solid #3a3a4d; line-height: 1.8; }
+.sky-regatta .srt-show:hover { background: #33334a; }
+.sky-regatta .srt-show + .srt-buttons { margin-top: 6px; }

@@ -62,6 +62,13 @@ async function resetRace(skipConfirm = false) {
   await whisper("<b>Sky Regatta:</b> race reset. Next up: Lap 1, Section A (Entry).");
 }
 
+/** GM: open the standings window on every connected client (players too), even before the first roll. */
+async function showToPlayers() {
+  if (!game.user.isGM) return;
+  await game.settings.set(MODULE_ID, "showSignal", { id: foundry.utils.randomID(), at: Date.now() });
+  ui.notifications.info("Sky Regatta standings shown to players.");
+}
+
 /** Lets a macro or the MCP drive the race: write {id, action, input} to the "command" setting. */
 async function runCommand(cmd) {
   if (!cmd || !cmd.id || cmd.id === lastCommandId) return;
@@ -71,6 +78,7 @@ async function runCommand(cmd) {
   else if (cmd.action === "undo") await undoLast();
   else if (cmd.action === "reset") await resetRace(true);
   else if (cmd.action === "open") getApp().render({ force: true });
+  else if (cmd.action === "show") await showToPlayers();
 }
 
 function getApp() { return (app ??= new SkyRegattaTower()); }
@@ -87,6 +95,7 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
       undo: SkyRegattaTower.#onUndo,
       reset: SkyRegattaTower.#onReset,
       step: SkyRegattaTower.#onStep,
+      show: SkyRegattaTower.#onShow,
     },
   };
 
@@ -142,6 +151,7 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
     target.disabled = true;
     try { await rollNext(input, this.#unlocked()); } finally { target.disabled = false; }
   }
+  static async #onShow() { await showToPlayers(); }
   static async #onUndo() { await undoLast(); }
   static async #onReset() { await resetRace(); }
 }
@@ -158,6 +168,11 @@ Hooks.once("init", () => {
   game.settings.register(MODULE_ID, "command", {
     scope: "world", config: false, type: Object, default: {},
     onChange: (value) => { runCommand(value); },
+  });
+  game.settings.register(MODULE_ID, "showSignal", {
+    scope: "world", config: false, type: Object, default: {},
+    // fires on every client when the GM presses "Show to players": open the window everywhere
+    onChange: (value) => { if (value?.id) getApp().render({ force: true }); },
   });
   game.settings.register(MODULE_ID, "autoOpen", {
     name: "Open the standings automatically",
@@ -181,6 +196,7 @@ Hooks.once("ready", () => {
   const mod = game.modules.get(MODULE_ID);
   mod.api = {
     open: () => getApp().render({ force: true }),
+    show: showToPlayers,
     rollNext, undo: undoLast, reset: resetRace,
     getState,
   };

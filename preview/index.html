@@ -57,6 +57,7 @@ gm.addEventListener("click", async (ev) => {
   if (!btn) return;
   const action = btn.dataset.action;
   document.getElementById("warn").textContent = "";
+  if (action === "show") { document.getElementById("warn").textContent = "(Preview: in Foundry this opens the window on every player's screen.)"; return; }
   if (action === "step") {
     const input = gm.querySelector(`input[name="${btn.dataset.for}"]`);
     let v = (Number(input.value) || 0) + Number(btn.dataset.dir);

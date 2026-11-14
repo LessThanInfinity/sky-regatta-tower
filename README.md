@@ -21,7 +21,8 @@ Then enable the module in the world.
 
 ## Use
 
-- Open the window with the macro `game.modules.get("sky-regatta-tower").api.open()`.
+- **Show to players:** the button in the GM controls opens the standings on every connected client (also available as `api.show()`, or action `show` on the command setting). Without it, players get the window automatically after the first roll.
+- Open the window on your own screen with the macro `game.modules.get("sky-regatta-tower").api.open()`.
 - GM only: `api.rollNext({ violet: 5, aji: 4 })`, `api.undo()`, `api.reset()`.
 - **Remote control (for the MCP or another macro):** write `{ "id": "<anything unique>", "action": "roll" | "undo" | "reset" | "open", "input": { "violet": 5, "aji": 4 } }` to the module's `command` world setting. The active GM's browser tab acts on it. PC totals default to the saved ones if you leave them out.
 - The race state is the module's `state` world setting.

@@ -71,6 +71,7 @@
     </details>
     <label class="srt-unlock"><input type="checkbox" name="unlock"> Unlock limits (allowed this section: {{limitText}})</label>
     {{/unless}}
+    <button type="button" class="srt-show" data-action="show"><i class="fa-solid fa-tv"></i> Show to players</button>
     <div class="srt-buttons">
       {{#unless finished}}<button type="button" class="srt-go" data-action="roll"><i class="fa-solid fa-dice"></i> Roll next section</button>{{/unless}}
       <button type="button" data-action="undo"><i class="fa-solid fa-rotate-left"></i> Undo</button>

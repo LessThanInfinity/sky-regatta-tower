@@ -8,7 +8,7 @@
   <ol class="srt-rows">
     <li class="srt-row srt-cols-head">
       <span class="pos"></span><span class="tag"></span><span class="name"></span>
-      <span class="delta">THIS</span><span class="total">VP</span><span class="move"></span><span class="gap">GAP</span>
+      <span class="delta">THIS</span><span class="total">VP</span><span class="movegap"><span class="move"></span><span class="gap">GAP</span></span>
     </li>
     {{#each rows}}
     <li class="srt-row {{#if isLeader}}leader{{/if}} {{#if pc}}pc{{/if}} {{rowClass}}">
@@ -20,8 +20,10 @@
       </span>
       <span class="delta {{deltaClass}}">{{deltaText}}</span>
       <span class="total">{{total}}</span>
-      <span class="move {{moveClass}}">{{moveText}}</span>
-      <span class="gap {{#if isLeader}}lead{{/if}}">{{gapText}}</span>
+      <span class="movegap">
+        <span class="move {{moveClass}}">{{moveText}}</span>
+        <span class="gap {{#if isLeader}}lead{{/if}}">{{gapText}}</span>
+      </span>
     </li>
     {{/each}}
   </ol>

@@ -156,3 +156,20 @@ test("delta reports what changed this section", async () => {
   assert.equal(state.delta.violet, 4);
   assert.equal(state.delta.aji, 1);
 });
+
+test("NPCs never attack their own teammates", async () => {
+  const teamOf = Object.fromEntries(ROSTER.map((r) => [r.name, r.team]));
+  for (let i = 0; i < 400; i++) {
+    const state = freshState();
+    state.lap = 1; state.sec = 2;                        // straight to Battle
+    state.vp = Object.fromEntries(ROSTER.map((r) => [r.id, 10 + (i % 2)]));
+    state.vp.syu = 10; state.vp.ranto = 10; state.vp.viridian = 9; state.vp.ivory = 10;
+    const rep = await resolveSection(state, { violet: state.vp.violet, aji: state.vp.aji }, randomD6);
+    for (const r of ROSTER.filter((x) => !x.pc)) {
+      for (const n of rep.notes[r.id]) {
+        const m = /^Attacks ([^:]+):/.exec(n);
+        if (m) assert.notEqual(teamOf[m[1]], r.team, `${r.name} attacked teammate ${m[1]}`);
+      }
+    }
+  }
+});

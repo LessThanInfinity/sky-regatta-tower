@@ -158,7 +158,7 @@ export async function resolveSection(state, input, d6, opts = {}) {
     }
 
     const targetsFor = (me) => {
-      const cand = snap.filter((r) => r.id !== me.id && Math.abs(r.total - me.total) <= 2 && !r.shelter);
+      const cand = snap.filter((r) => r.id !== me.id && r.team !== me.team && Math.abs(r.total - me.total) <= 2 && !r.shelter);   // never a teammate
       const ahead = shuffle(cand.filter((r) => r.total > me.total)).sort((a, b) => a.total - b.total);
       const level = shuffle(cand.filter((r) => r.total === me.total));
       const behind = shuffle(cand.filter((r) => r.total < me.total)).sort((a, b) => b.total - a.total);

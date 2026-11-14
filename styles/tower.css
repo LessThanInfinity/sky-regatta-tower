@@ -13,7 +13,7 @@
 
 .sky-regatta .srt-rows { list-style: none; margin: 0; padding: 0; }
 .sky-regatta .srt-row {
-  display: grid; grid-template-columns: 1.5rem 2.6rem minmax(0, 1fr) 2.1rem 2.1rem 2rem 4.1rem; align-items: center; gap: 4px;
+  display: grid; grid-template-columns: 1.5rem 2.6rem minmax(0, 1fr) 2.1rem 2.1rem 6.3rem; align-items: center; gap: 4px;
   padding: 4px 8px; min-height: 2rem; border-bottom: 1px solid #262633; font-size: 0.95rem;
 }
 .sky-regatta .srt-row:nth-child(even):not(.srt-cols-head) { background: #1b1b27; }
@@ -32,8 +32,12 @@
 .sky-regatta .srt-row .move { text-align: right; font-weight: 700; font-size: 0.8rem; }
 .sky-regatta .srt-row .move.up { color: var(--gain); }
 .sky-regatta .srt-row .move.down { color: var(--loss); }
-.sky-regatta .srt-row.moved-up { border-bottom: 3px solid var(--gain); }
-.sky-regatta .srt-row.moved-down { border-bottom: 3px solid var(--loss); }
+.sky-regatta .srt-row .movegap { display: flex; align-items: center; justify-content: flex-end; gap: 4px; align-self: stretch; margin-block: -4px; padding-block: 4px; }
+.sky-regatta .srt-row .movegap .move { width: 2rem; }
+.sky-regatta .srt-row .movegap .gap { width: 4.1rem; }
+/* The position-change underline sits under the caret and gap only, not the whole row. */
+.sky-regatta .srt-row.moved-up .movegap { box-shadow: inset 0 -2px 0 var(--gain); }
+.sky-regatta .srt-row.moved-down .movegap { box-shadow: inset 0 -2px 0 var(--loss); }
 .sky-regatta .srt-row .delta { text-align: right; font-weight: 700; font-size: 0.85rem; }
 .sky-regatta .srt-row .delta.up { color: #3ddc84; }
 .sky-regatta .srt-row .delta.down { color: #ff5a5a; }
@@ -42,6 +46,9 @@
 .sky-regatta .srt-row .gap.lead { color: #fff; font-weight: 700; }
 .sky-regatta .srt-row.leader { box-shadow: inset 3px 0 0 #e10600; }
 .sky-regatta .srt-row.pc .name { color: #f0e0ff; }
+/* Player rows are always highlighted so you can find them at a glance. */
+.sky-regatta .srt-row.pc { background: rgba(168, 85, 247, 0.20) !important; box-shadow: inset -3px 0 0 #a855f7; }
+.sky-regatta .srt-row.pc.leader { box-shadow: inset 3px 0 0 #e10600, inset -3px 0 0 #a855f7; }
 
 /* GM controls */
 .sky-regatta .srt-controls { padding: 8px 10px 10px; background: #0d0d14; border-top: 2px solid #e10600; text-transform: none; letter-spacing: 0; }

@@ -146,7 +146,7 @@ test("report text builds for every section of a full race", async () => {
   const s = freshState();
   const rep = await resolveSection(s, { violet: 2, aji: 3 }, randomD6);
   const html = buildReport(s, rep);
-  assert.match(html, /Sky Regatta: Lap 1, Section A/);
+  assert.match(html, /Sky Regatta: Section 1\/16 · Lap 1, A/);
   assert.match(html, /LEADER|back/);
 });
 

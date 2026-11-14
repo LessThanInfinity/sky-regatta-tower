@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { freshState, resolveSection, ROSTER } from "../scripts/engine.mjs";
 import {
   degreeOf, lineVp, sectionMenu, validatePcRequest, applyPcCheck, applyNarrows, clearPcRoll, computeMod, eligibleTargets,
-  planNpcDice, positionTarget, buildDialogHtml, buildDcCardHtml, buildNpcDiceHtml, buildPcRollHtml, LINES,
+  planNpcDice, positionTarget, readDialogForm, rerollPcRoll, buildDialogHtml, buildDcCardHtml, buildNpcDiceHtml, buildPcRollHtml, LINES,
 } from "../scripts/rolls.mjs";
 
 const d6 = async () => 1 + Math.floor(Math.random() * 6);
@@ -97,14 +97,12 @@ test("a rival effect queues a VP loss for that NPC and clearing the roll removes
   assert.equal(s.pending.violet, undefined);
 });
 
-test("clearing a roll reverses Favor, drake and influence changes too", () => {
+test("clearing a roll reverses Favor and drake changes too", () => {
   const s = freshState();
   s.favor.party = 2;
   const before = JSON.stringify({ f: s.favor, d: s.drake, i: s.influence, u: s.used, b: s.bonus });
   s.lap = 4; s.sec = 1;                                                                      // Rings
   applyPcCheck(s, { pcId: "violet", choiceId: "qiu-may-s-silk-smooth:nature", lineId: "risky", spendFavor: true }, roll(20, 20));   // nat 20 -> crit
-  assert.equal(s.influence.qiu, 1);
-  assert.equal(s.influence.hida, 1);            // crit with the top skill: both sponsors
   assert.equal(s.favor.party, 1);
   clearPcRoll(s, "violet");
   assert.equal(JSON.stringify({ f: s.favor, d: s.drake, i: s.influence, u: s.used, b: s.bonus }), before);
@@ -229,7 +227,7 @@ test("the roll dialog strikes through and disables used skills, and shows what e
   const html = buildDialogHtml(s, "violet", sectionMenu(1, "A"), { mods: { athletics: 23, nature: 18 }, targets: [{ id: "syu", name: "Syu Tak-nwa", total: 2 }], key: "A" });
   assert.match(html, /<s>Athletics<\/s>/);
   assert.match(html, /used this lap/);
-  assert.match(html, /value="muscle-through:athletics" disabled/);
+  assert.match(html, /value="muscle-through:athletics"\s+disabled/);
   assert.doesNotMatch(html, /value="command-the-drake:nature" disabled/);                // an unused skill is selectable
   assert.match(html, /Rile up the crowd/);                                              // Flair explains itself
   assert.match(html, /Syu Tak-nwa \(2 VP\)/);
@@ -363,4 +361,87 @@ test("the dialog markup has no <form>: Foundry wraps dialog content in its own f
   const html = buildDialogHtml(freshState(), "violet", sectionMenu(1, "A"), { mods: {}, targets: [], key: "A" });
   assert.doesNotMatch(html, /<form/i);
   assert.match(html, /^<div class="srt-dialog">/);
+});
+
+test("a locked dialog shows the finished roll and disables every control", () => {
+  const state = freshState();
+  const req = { pcId: "violet", lap: 1, key: "A", choiceId: sectionMenu(1, "A").choices[0].id, lineId: "standard", bench: 1, spendFavor: false };
+  const res = applyPcCheck(state, req, { nat: 12, mod: 20, parts: [{ label: "skill", value: 18 }, { label: "party", value: 2 }] }, { autoVp: false });
+  assert.ok(res.ok);
+  const html = buildDialogHtml(state, "violet", sectionMenu(1, "A"), { locked: state.pending.violet, key: "A" });
+  assert.match(html, /Already rolled this section/);
+  assert.match(html, /Suggested/);
+  assert.doesNotMatch(html, /<input type="radio"[^>]*name="choice"(?![^>]*disabled)[^>]*>/);
+  assert.match(html, /name="choice" value="[^"]+" checked disabled/);
+});
+
+test("Rising Hall dialog: route cards, Narrows panel with its own hidden choice, Dip panel with lines and four skills; the form reader follows the route", () => {
+  const html = buildDialogHtml(freshState(), "violet", sectionMenu(2, "B"), { mods: {}, targets: [], key: "B" });
+  assert.match(html, /name="route" value="narrows"/);
+  assert.match(html, /name="route" value="dip" checked/);
+  assert.match(html, /name="narrowsChoice"/);
+  assert.equal((html.match(/name="choice"/g) ?? []).length, 4);          // only the four Dip skills use "choice"
+  assert.equal((html.match(/name="line"/g) ?? []).length, 3);
+  const fd = (obj) => ({ get: (k) => (Array.isArray(obj[k]) ? obj[k][0] ?? null : obj[k] ?? null), getAll: (k) => [].concat(obj[k] ?? []) });
+  const nar = readDialogForm(fd({ route: "narrows", narrowsChoice: "the-narrows-inside-sheltered:narrows", choice: "x", line: "risky", narrows: ["athletics", "nature", "survival"] }));
+  assert.equal(nar.choiceId, "the-narrows-inside-sheltered:narrows");
+  assert.equal(nar.lineId, undefined);
+  assert.deepEqual(nar.narrows, ["athletics", "nature", "survival"]);
+  const dip = readDialogForm(fd({ route: "dip", narrowsChoice: "n", choice: "the-dip-outside-exposed:athletics", line: "risky", narrows: ["athletics"] }));
+  assert.equal(dip.choiceId, "the-dip-outside-exposed:athletics");
+  assert.equal(dip.lineId, "risky");
+  assert.deepEqual(dip.narrows, []);
+});
+
+test("Hero Point reroll of a line roll replaces the result, keeps the Favor and used skill honest, and works once", () => {
+  const s = freshState();
+  s.favor.party = 2;
+  applyPcCheck(s, req({ spendFavor: true }), roll(3, 20), { autoVp: true });         // 3+20+1 favor? mod is given as 20: total 23 vs DC 30 = failure
+  const before = s.pending.violet;
+  assert.equal(before.degree, "failure");
+  assert.equal(s.favor.party, 1);
+  const r = rerollPcRoll(s, "violet", 18);
+  assert.ok(r.ok, r.error);
+  const after = s.pending.violet;
+  assert.equal(after.nat, 18);
+  assert.equal(after.total, 38);
+  assert.equal(after.degree, "success");
+  assert.equal(after.heroUsed, true);
+  assert.deepEqual(after.reroll, { which: null, from: 3, fromTotal: 23, to: 18 });
+  assert.equal(s.favor.party, 1, "Favor is spent once, not twice");
+  assert.equal(s.favor.spent, 1);
+  assert.equal(s.used.violet.filter((x) => x === "athletics").length, 1, "the skill is recorded once");
+  assert.match(after.summary, /Hero Point reroll/);
+  assert.equal(rerollPcRoll(s, "violet", 20).ok, false, "only one reroll per roll");
+});
+
+test("a worse reroll sticks (you must keep the second result), and drake changes follow it", () => {
+  const s = freshState();
+  applyPcCheck(s, req({ lineId: "risky" }), roll(15, 20), { autoVp: true });         // 35 vs DC 32: success
+  assert.equal(s.pending.violet.degree, "success");
+  rerollPcRoll(s, "violet", 3);                                                       // 23 vs DC 32: failure on Risky, the drake drops
+  assert.equal(s.pending.violet.degree, "failure");
+  assert.equal(s.drake.violet, 1);
+});
+
+test("Hero Point reroll in the Narrows rerolls one chosen die", () => {
+  const s = freshState();
+  s.lap = 2; s.sec = 1;
+  const nreq = { pcId: "violet", choiceId: "the-narrows-inside-sheltered:narrows", narrows: ["athletics", "nature", "survival"] };
+  applyNarrows(s, nreq, [{ skill: "athletics", nat: 2, mod: 20 }, { skill: "nature", nat: 15, mod: 20 }, { skill: "survival", nat: 3, mod: 20 }], { autoVp: true });
+  assert.equal(s.pending.violet.checks.filter((c) => c.degree === "failure").length, 2);       // two strikes: thrown out
+  assert.equal(s.sheltered.violet, false);
+  const r = rerollPcRoll(s, "violet", 19, 2);
+  assert.ok(r.ok, r.error);
+  const p = s.pending.violet;
+  assert.deepEqual(p.checks.map((c) => c.nat), [2, 15, 19]);
+  assert.equal(p.checks.filter((c) => c.degree === "failure").length, 1);
+  assert.equal(s.sheltered.violet, true, "one strike: still sheltered");
+  assert.equal(p.reroll.which, 2);
+  assert.equal(rerollPcRoll(s, "violet", 10, 0).ok, false);
+});
+
+test("a reroll with nothing to reroll, or a bad pick, changes nothing", () => {
+  const s = freshState();
+  assert.equal(rerollPcRoll(s, "violet", 10).ok, false);
 });

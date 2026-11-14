@@ -88,3 +88,14 @@ test("the tower context has a row for everyone and GM-only controls are flagged"
   assert.equal(towerContext(s, { isGM: true }).isGM, true);
   assert.equal(towerContext(s, { isGM: false }).isGM, false);
 });
+
+test("the subtitle and next label carry the section number out of 16", async () => {
+  const { freshState: fs, resolveSection: rs } = await import("../scripts/engine.mjs");
+  const { towerContext: tc } = await import("../scripts/view.mjs");
+  const st = fs();
+  assert.match(tc(st, {}).nextLabel, /^Section 1\/16 · Lap 1 A, Entry/);
+  for (let i = 0; i < 4; i++) await rs(st, {}, async () => 3);
+  const ctx = tc(st, {});
+  assert.match(ctx.subtitle, /^After section 4\/16 · Lap 1 D, Sprint/);
+  assert.match(ctx.nextLabel, /^Section 5\/16 · Lap 2 A, Entry/);
+});

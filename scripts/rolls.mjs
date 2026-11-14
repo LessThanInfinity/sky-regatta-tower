@@ -2,7 +2,7 @@
  * Dice, DCs and PC checks for the Sky Regatta. Pure JavaScript (no Foundry), so it is unit tested.
  * Rules come from sky-regatta-race-plan.md (sections 2, 4 and 5).
  */
-import { ROSTER, SECTION_NAME, OBSTACLE, normalizeState, signed, esc } from "./engine.mjs";
+import { ROSTER, SECTION_NAME, OBSTACLE, normalizeState, signed, esc, sectionNumber } from "./engine.mjs";
 
 export const PARTY_BONUS = 2;      // untyped bonus the party carries into every race roll
 export const BATTLE_DC = 30;
@@ -70,10 +70,10 @@ const CABLE_WEB = [
   lane("Low lane", "perception", "risky", "Dive through the tightest gap, the fastest line. Crit failure: the drake scrapes a cable and drops a rung.", { fx: { critFailure: { drake: 1 } } }),
 ];
 const RINGS = [
-  mk("Qiu May's silk (smooth)", "nature", "A clean, gentle pass. Success: 1 Influence with Lady Qiu May. A crit with Nature: Influence with both sponsors.", { patron: "qiu", top: true, fx: { critFailure: { drake: 1 } } }),
-  mk("Qiu May's silk (smooth)", "acrobatics", "A clean, gentle pass. Success: 1 Influence with Lady Qiu May.", { patron: "qiu", fx: { critFailure: { drake: 1 } } }),
-  mk("Hida's steel (disciplined)", "athletics", "A tight, aggressive pass. Success: 1 Influence with General Hida. A crit with Athletics: Influence with both sponsors.", { patron: "hida", top: true, fx: { critFailure: { drake: 1 } } }),
-  mk("Hida's steel (disciplined)", "intimidation", "A tight, aggressive pass. Success: 1 Influence with General Hida.", { patron: "hida", fx: { critFailure: { drake: 1 } } }),
+  mk("Qiu May's silk (smooth)", "nature", "A clean, gentle pass.", { patron: "qiu", top: true, fx: { critFailure: { drake: 1 } } }),
+  mk("Qiu May's silk (smooth)", "acrobatics", "A clean, gentle pass.", { patron: "qiu", fx: { critFailure: { drake: 1 } } }),
+  mk("Hida's steel (disciplined)", "athletics", "A tight, aggressive pass.", { patron: "hida", top: true, fx: { critFailure: { drake: 1 } } }),
+  mk("Hida's steel (disciplined)", "intimidation", "A tight, aggressive pass.", { patron: "hida", fx: { critFailure: { drake: 1 } } }),
 ];
 const NARROWS = mk("The Narrows (inside, sheltered)", "narrows", "Three checks at DC 30, each with a DIFFERENT skill. A success is +1 VP, a crit +2, and a failure is a strike. Two strikes: -1 VP and no shelter. Sheltered riders can't be targeted in Battle. These checks don't count toward the no-repeat rule.", { special: "narrows" });
 const DIP = ["athletics", "acrobatics", "nature", "survival"].map((sk) => mk("The Dip (outside, exposed)", sk, "One roll with the usual line choice. You enter Battle unsheltered."));
@@ -194,12 +194,6 @@ export function applyPcCheck(state, req, roll, options = {}) {
     const tgt = ctx.target ? totalNow(state, ctx.target) : null;
     if (tgt === null || !(totalNow(state, pcId) < tgt)) { notes.push("Draft needs you to be behind your target: no gain."); ctx.self = 0; }
   }
-  if (choice.patron && (degree === "success" || degree === "critSuccess")) {
-    const both = degree === "critSuccess" && choice.top;
-    const gets = both ? ["qiu", "hida"] : [choice.patron];
-    for (const g of gets) { state.influence[g] += 1; change.influence[g] += 1; }
-    notes.push(`+1 Influence with ${gets.map((g) => (g === "qiu" ? "Lady Qiu May" : "General Hida")).join(" and ")}`);
-  }
   vp += ctx.self;
 
   // drake condition: at most one rung down per roll, or one up for a crit
@@ -218,6 +212,8 @@ export function applyPcCheck(state, req, roll, options = {}) {
   state.pending[pcId] = {
     lap: state.lap, key, choiceId: choice.id, group: choice.group, skill: choice.skill, lineId: lineId ?? null, dc,
     nat: roll.nat, mod: roll.mod, total, degree, vp: auto ? vp : 0, suggested: vp, auto, hold: ctx.hold, notes, summary, undo: change, target: ctx.target,
+    bench: Number(req.bench) || 0, spendFavor: !!req.spendFavor, parts: roll.parts ?? [],
+    request: { choiceId: req.choiceId, lineId: req.lineId, target: req.target, bench: Number(req.bench) || 0, spendFavor: !!req.spendFavor },
   };
   return { ok: true, pending: state.pending[pcId], parts: roll.parts ?? [] };
 }
@@ -243,7 +239,7 @@ export function applyNarrows(state, req, rolls, options = {}) {
   if (req.spendFavor) { state.favor.party -= 1; state.favor.spent += 1; change.favor -= 1; change.favorSpent = 1; }
   state.sheltered[pcId] = !out;
   const summary = `The Narrows: ${checks.map((c) => `${SKILL_LABEL[c.skill]} ${c.total} ${DEGREE_LABEL[c.degree]}`).join("; ")} → ${auto ? "" : "suggests "}${signed(vp)} VP`;
-  state.pending[pcId] = { lap: state.lap, key: "B", choiceId: v.choice.id, group: v.choice.group, skill: "narrows", lineId: null, dc: NARROWS_DC, checks, vp: auto ? vp : 0, suggested: vp, auto, hold: 0, notes, summary, undo: change, degree: out ? "failure" : "success" };
+  state.pending[pcId] = { lap: state.lap, key: "B", choiceId: v.choice.id, group: v.choice.group, skill: "narrows", lineId: null, dc: NARROWS_DC, checks, vp: auto ? vp : 0, suggested: vp, auto, hold: 0, notes, summary, undo: change, degree: out ? "failure" : "success", bench: Number(req.bench) || 0, spendFavor: !!req.spendFavor, request: { choiceId: req.choiceId, bench: Number(req.bench) || 0, spendFavor: !!req.spendFavor, narrows: [...new Set(req.narrows ?? [])] } };
   return { ok: true, pending: state.pending[pcId], checks };
 }
 
@@ -263,6 +259,41 @@ export function clearPcRoll(state, pcId) {
   if (u.shelteredPrev !== undefined) state.sheltered[pcId] = u.shelteredPrev;
   delete state.pending[pcId];
   return true;
+}
+
+/**
+ * Spend a Hero Point: reroll the d20 of a rider's finished roll and keep the new result (PF2e: you take the second roll).
+ * A line roll rerolls its one die. The Narrows lets you pick which of its three dice (`which`, 0 to 2).
+ * Everything the old roll did is undone and the new roll is applied in its place. One reroll per roll.
+ */
+export function rerollPcRoll(state, pcId, newNat, which = 0) {
+  const pend = state.pending?.[pcId];
+  if (!pend) return { ok: false, error: "There is no roll to reroll." };
+  if (pend.heroUsed) return { ok: false, error: "A Hero Point has already been spent on this roll." };
+  const isNarrows = pend.skill === "narrows";
+  if (isNarrows && !(which >= 0 && which < (pend.checks?.length ?? 0))) return { ok: false, error: "Pick which of the three checks to reroll." };
+  const snapshot = JSON.stringify(state);
+  const oldNat = isNarrows ? pend.checks[which].nat : pend.nat;
+  const oldTotal = isNarrows ? pend.checks[which].total : pend.total;
+  const req = { pcId, lap: pend.lap, key: pend.key, ...pend.request };
+  const auto = pend.auto;
+  let rolls = null, roll = null;
+  if (isNarrows) rolls = pend.checks.map((c, i) => ({ skill: c.skill, nat: i === which ? newNat : c.nat, mod: c.mod }));
+  else roll = { nat: newNat, mod: pend.mod, parts: pend.parts ?? [] };
+  const parts = pend.parts;
+  clearPcRoll(state, pcId);
+  const res = isNarrows ? applyNarrows(state, req, rolls, { autoVp: auto }) : applyPcCheck(state, req, roll, { autoVp: auto });
+  if (!res.ok) {
+    const back = JSON.parse(snapshot);
+    for (const k of Object.keys(state)) delete state[k];
+    Object.assign(state, back);
+    return res;
+  }
+  const np = state.pending[pcId];
+  np.heroUsed = true;
+  np.reroll = { which: isNarrows ? which : null, from: oldNat, fromTotal: oldTotal, to: newNat };
+  np.summary += " · Hero Point reroll";
+  return { ok: true, pending: np, checks: res.checks, parts: parts ?? [] };
 }
 
 // ---------- NPC dice theatre ----------
@@ -338,7 +369,7 @@ export function planNpcDice(npcs, lap, key, modFor, attackerIds = new Set(), ctx
 }
 
 // ---------- HTML for chat cards and dialogs ----------
-const sectionTitle = (lap, key) => `Lap ${lap} · ${key} · ${SECTION_NAME[key]}${key === "B" ? ` · ${OBSTACLE[lap]}` : ""}`;
+const sectionTitle = (lap, key) => `Section ${sectionNumber(lap, key)}/16 · Lap ${lap} ${key} · ${SECTION_NAME[key]}${key === "B" ? ` · ${OBSTACLE[lap]}` : ""}`;
 const cardHead = (title, sub = "") => `<div class="srt-card-head"><span class="badge">SKY REGATTA</span><span class="title">${esc(title)}</span>${sub ? `<span class="sub">${esc(sub)}</span>` : ""}</div>`;
 const degPill = (degree) => `<span class="deg ${degree}">${DEGREE_LABEL[degree]}</span>`;
 const vpLine = (vp, auto) => (auto ? `<b>${signed(vp)} VP</b>` : `<b>Suggested: ${signed(vp)} VP</b> <small>(the GM sets the VP)</small>`);
@@ -381,18 +412,20 @@ export function buildDcCardHtml(state, lap, key) {
 }
 
 /** A PC's roll: the big total, the degree, and what it does. */
-export function buildPcRollHtml({ pcName, choice, lineId, dc, nat, parts, total, degree, vp, notes, auto = true }) {
+export function buildPcRollHtml({ pcName, choice, lineId, dc, nat, parts, total, degree, vp, notes, auto = true, reroll = null }) {
   const bonus = parts.map((p) => `${signed(p.value)} ${esc(p.label)}`).join(", ");
   const how = lineId ? `${LINES[lineId].label} · DC ${dc}` : `DC ${dc}`;
   return `<div class="srt-card srt-roll">${cardHead(pcName, `${choice.group} (${SKILL_LABEL[choice.skill] ?? choice.skill})`)}`
     + `<div class="rollrow"><span class="big">${total}</span><span class="calc">d20 <b>${nat}</b> (${bonus})<br>${esc(how)}</span>${degPill(degree)}</div>`
+    + (reroll ? `<div class="hero">&#9733; Hero Point reroll: <s>${reroll.from}</s> &rarr; <b>${reroll.to}</b></div>` : "")
     + `<div class="vpline">${vpLine(vp, auto)}${notes.length ? `<br><small>${notes.map(esc).join(" · ")}</small>` : ""}</div></div>`;
 }
 
 /** The Narrows: three checks. */
-export function buildNarrowsHtml({ pcName, checks, vp, notes, auto = true }) {
-  const rows = checks.map((c) => `<div class="nrow"><span class="who">${esc(SKILL_LABEL[c.skill])}</span><span class="calc">d20 <b>${c.nat}</b> ${signed(c.mod)} = <b>${c.total}</b></span>${degPill(c.degree)}</div>`).join("");
+export function buildNarrowsHtml({ pcName, checks, vp, notes, auto = true, reroll = null }) {
+  const rows = checks.map((c, i) => `<div class="nrow"><span class="who">${esc(SKILL_LABEL[c.skill])}${reroll && reroll.which === i ? " &#9733;" : ""}</span><span class="calc">d20 <b>${c.nat}</b> ${signed(c.mod)} = <b>${c.total}</b></span>${degPill(c.degree)}</div>`).join("");
   return `<div class="srt-card srt-roll">${cardHead(pcName, `The Narrows (DC ${NARROWS_DC})`)}${rows}`
+    + (reroll ? `<div class="hero">&#9733; Hero Point reroll of ${esc(SKILL_LABEL[checks[reroll.which]?.skill] ?? "a check")}: <s>${reroll.from}</s> &rarr; <b>${reroll.to}</b></div>` : "")
     + `<div class="vpline">${vpLine(vp, auto)}<br><small>${notes.map(esc).join(" · ")}</small></div></div>`;
 }
 
@@ -404,48 +437,100 @@ const LINE_CARD = {
 };
 
 /** The skill picker a player sees. `mods` maps skill -> that rider's modifier; `targets` is from eligibleTargets. */
-export function buildDialogHtml(state, pcId, menu, { mods = {}, targets = [], key } = {}) {
+export function buildDialogHtml(state, pcId, menu, { mods = {}, targets = [], key, locked = null, heroLeft = 0 } = {}) {
+  const L0 = locked;                                   // a finished roll: show what was picked, nothing can be changed
   const used = new Set(state.used?.[pcId] ?? []);
   const strained = (state.drake?.[pcId] ?? 0) >= 2;
-  const showLines = menu.lines && menu.type !== "lane" && menu.type !== "battle";
 
-  // ---- step 1: the line, as three panels ----
-  const lineHtml = showLines ? `<div class="srt-step"><span class="n">1</span> Choose your line</div><div class="srt-lines">${Object.values(LINES).map((L) => {
+  const stepHead = (n, text) => `<div class="srt-step"><span class="n">${n}</span> ${text}</div>`;
+
+  // the three lines, as panels
+  const linesPanel = () => `<div class="srt-lines">${Object.values(LINES).map((L) => {
     const c = LINE_CARD[L.id];
     const dis = L.id === "risky" && strained;
-    return `<label class="srt-pick srt-line ${L.id}${dis ? " off" : ""}"><input type="radio" name="line" value="${L.id}" ${L.id === "standard" ? "checked" : ""} ${dis ? "disabled" : ""}>`
+    return `<label class="srt-pick srt-line ${L.id}${dis || (L0 && L0.lineId !== L.id) ? " off" : ""}"><input type="radio" name="line" value="${L.id}" ${(L0 ? L0.lineId === L.id : L.id === "standard") ? "checked" : ""} ${dis || L0 ? "disabled" : ""}>`
       + `<span class="card"><span class="head"><b>${L.label}</b><span class="dc">DC ${L.dc}</span></span><span class="tag">${dis ? "A Strained drake can't go all-out" : c.tag}</span>`
       + `<span class="pay"><span><i>Critical success</i><b>${c.crit}</b></span><span><i>Success</i><b>${c.ok}</b></span><span><i>Failure</i><b>${c.fail}</b></span><span><i>Critical failure</i><b>${c.critFail}</b></span></span></span></label>`;
-  }).join("")}</div>${menu.type === "hall" ? '<div class="srt-note">The Dip uses your line. The Narrows is three checks at DC 30 and ignores it.</div>' : '<div class="srt-note">Flair and fixed lanes set their own DC.</div>'}` : "";
+  }).join("")}</div>`;
 
-  // ---- step 2: the approach, one row per skill: skill on the left, what it does on the right ----
-  const rows = [];
-  for (const c of menu.choices) {
-    const isUsed = menu.type !== "battle" && c.special !== "narrows" && used.has(c.skill);
+  // one tile per skill: skill and modifier on top, what it does underneath
+  const tile = (c) => {
+    const isUsed = !L0 && menu.type !== "battle" && used.has(c.skill);
+    const dim = isUsed || (L0 && L0.choiceId !== c.id);
     const mod = mods[c.skill];
-    const skillName = c.special === "narrows" ? "The Narrows" : SKILL_LABEL[c.skill];
-    const modHtml = mod === undefined || c.special === "narrows" ? "" : `<span class="mod">${signed(mod)}</span>`;
+    const modHtml = mod === undefined ? "" : `<span class="mod">${signed(mod)}</span>`;
     const pill = c.line ? `<span class="pill ${c.line}">${LINES[c.line].label} · DC ${LINES[c.line].dc}</span>` : "";
-    const left = isUsed ? `<span class="skill"><s>${esc(skillName)}</s></span><span class="usedtag">used this lap</span>` : `<span class="skill">${esc(skillName)}${modHtml}</span>${pill}`;
-    rows.push(`<label class="srt-pick srt-opt${isUsed ? " off" : ""}"><input type="radio" name="choice" value="${c.id}" ${isUsed ? "disabled" : ""}>`
-      + `<span class="card"><span class="left">${left}</span><span class="right"><b>${esc(c.group)}</b><span>${esc(c.desc)}</span></span></span></label>`);
-    if (c.special === "narrows") {
-      rows.push(`<div class="srt-narrows"><span>Pick three different skills:</span>${["athletics", "acrobatics", "nature", "survival", "intimidation", "deception", "perception"].map((sk) => `<label class="chip"><input type="checkbox" name="narrows" value="${sk}"><span>${SKILL_LABEL[sk]}${mods[sk] === undefined ? "" : ` <b>${signed(mods[sk])}</b>`}</span></label>`).join("")}</div>`);
-    }
+    const left = isUsed ? `<span class="skill"><s>${esc(SKILL_LABEL[c.skill])}</s></span><span class="usedtag">used this lap</span>` : `<span class="skill">${esc(SKILL_LABEL[c.skill])}${modHtml}</span>${pill}`;
+    return `<label class="srt-pick srt-opt${dim ? " off" : ""}"><input type="radio" name="choice" value="${c.id}" ${L0 && L0.choiceId === c.id ? "checked" : ""} ${dim || L0 ? "disabled" : ""}>`
+      + `<span class="card"><span class="left">${left}</span><span class="right"><b>${esc(c.group)}</b><span>${esc(c.desc)}</span></span></span></label>`;
+  };
+  const tiles = (list) => `<div class="srt-opts">${list.map(tile).join("")}</div>`;
+
+  let body;
+  if (menu.type === "hall") {
+    // Rising Hall: pick a route first; the rest of the dialog follows the route
+    const nar = menu.choices.find((c) => c.special === "narrows");
+    const dip = menu.choices.filter((c) => c.special !== "narrows");
+    const route = L0 ? (L0.skill === "narrows" ? "narrows" : "dip") : "dip";
+    const routeCard = (id, name, tag, text) => `<label class="srt-pick srt-route-card${L0 && route !== id ? " off" : ""}"><input type="radio" name="route" value="${id}" ${route === id ? "checked" : ""} ${L0 ? "disabled" : ""}>`
+      + `<span class="card ${id}"><span class="head"><b>${name}</b></span><span class="tag">${tag}</span><span class="txt">${text}</span></span></label>`;
+    const chips = ["athletics", "acrobatics", "nature", "survival", "intimidation", "deception", "perception"].map((sk) => `<label class="chip"><input type="checkbox" name="narrows" value="${sk}" ${L0 ? "disabled" : ""} ${L0 && (L0.checks ?? []).some((x) => x.skill === sk) ? "checked" : ""}><span>${SKILL_LABEL[sk]}${mods[sk] === undefined ? "" : ` <b>${signed(mods[sk])}</b>`}</span></label>`).join("");
+    body = stepHead(1, "Choose your route")
+      + `<div class="srt-routes">${routeCard("narrows", "The Narrows", "Inside · sheltered", "Three checks at DC 30. You're safe from Battle attacks this lap.")}${routeCard("dip", "The Dip", "Outside · exposed", "One roll on a line of your choice. You enter Battle exposed.")}</div>`
+      + `<div class="srt-route-panel srt-route-narrows">${stepHead(2, "Pick three different skills")}<div class="srt-narrows">${chips}</div>`
+      + `<div class="srt-note">${esc(nar.desc)}</div><input type="hidden" name="narrowsChoice" value="${nar.id}"></div>`
+      + `<div class="srt-route-panel srt-route-dip">${stepHead(2, "Choose your line")}${linesPanel()}${stepHead(3, "Choose your skill")}${tiles(dip)}</div>`;
+  } else {
+    const showLines = menu.lines && menu.type !== "battle" && menu.type !== "lane";
+    const word = menu.type === "battle" ? "Choose your battle action" : menu.type === "lane" ? "Choose your lane" : "Choose your approach";
+    body = (showLines ? stepHead(1, "Choose your line") + linesPanel() + '<div class="srt-note">Flair and fixed lanes set their own DC.</div>' : "")
+      + stepHead(showLines ? 2 : 1, word) + tiles(menu.choices);
   }
-  const approachHtml = `<div class="srt-step"><span class="n">${showLines ? 2 : 1}</span> ${menu.type === "battle" ? "Choose your battle action" : menu.type === "lane" ? "Choose your lane" : "Choose your approach"}</div><div class="srt-opts">${rows.join("")}</div>`;
 
   // ---- target and help ----
   const needTarget = menu.choices.some((c) => c.target);
-  const targetHtml = needTarget
+  const targetHtml = L0 ? (needTarget ? `<div class="srt-help"><span>Target: <b>${L0.target ? esc(riderName(L0.target)) : "none"}</b></span></div>` : "") : needTarget
     ? `<div class="srt-help"><label>Target <select name="target"><option value="">No target</option>${targets.map((t) => `<option value="${t.id}">${esc(t.name)} (${t.total} VP)</option>`).join("")}</select></label>${targets.length ? "" : '<span class="srt-note">No rival is within 2 VP right now.</span>'}</div>` : "";
   const favor = state.favor?.party ?? 0;
   const left = 2 - (state.favor?.spent ?? 0);
   const drakeNote = (state.drake?.[pcId] ?? 0) ? ` Your drake is ${DRAKE_STATES[state.drake[pcId]]}.` : "";
   const helpHtml = `<div class="srt-help">`
-    + `<label>Bench help <select name="bench"><option value="0">None</option><option value="1">+1</option><option value="2">+2</option></select></label>`
-    + `<label class="spend"><input type="checkbox" name="spendFavor" ${favor < 1 || left < 1 ? "disabled" : ""}> Spend 1 Favor for +1 <small>(party has ${favor}; ${Math.max(0, left)} left this lap)</small></label>`
+    + `<label>Bench help <select name="bench" ${L0 ? "disabled" : ""}>${[0, 1, 2].map((n) => `<option value="${n}" ${L0 && (L0.bench ?? 0) === n ? "selected" : ""}>${n ? "+" + n : "None"}</option>`).join("")}</select></label>`
+    + `<label class="spend"><input type="checkbox" name="spendFavor" ${L0 ? (L0.spendFavor ? "checked disabled" : "disabled") : (favor < 1 || left < 1 ? "disabled" : "")}> Spend 1 Favor for +1 ${L0 ? "" : `<small>(party has ${favor}; ${Math.max(0, left)} left this lap)</small>`}</label>`
     + `<span class="srt-note">The party's +2 is added automatically.${drakeNote}</span></div>`;
 
-  return `<div class="srt-dialog"><p class="srt-intro">${esc(menu.intro)}</p>${lineHtml}${approachHtml}${targetHtml}${helpHtml}</div>`;
+  let resultHtml = "";
+  if (L0) {
+    const pcName = riderName(pcId);
+    const card = L0.skill === "narrows"
+      ? buildNarrowsHtml({ pcName, checks: L0.checks ?? [], vp: L0.suggested ?? 0, notes: L0.notes ?? [], auto: L0.auto, reroll: L0.reroll })
+      : buildPcRollHtml({ pcName, choice: { group: L0.group, skill: L0.skill }, lineId: L0.lineId, dc: L0.dc, nat: L0.nat, parts: L0.parts ?? [], total: L0.total, degree: L0.degree, vp: L0.suggested ?? 0, notes: L0.notes ?? [], auto: L0.auto, reroll: L0.reroll });
+    let hero = "";
+    if (L0.heroUsed) hero = `<div class="srt-hero used">&#9733; You spent a Hero Point on this roll.</div>`;
+    else if (heroLeft > 0) {
+      const pickWhich = L0.skill === "narrows"
+        ? `<div class="which">Reroll which check? ${(L0.checks ?? []).map((c, i) => `<label class="chip"><input type="radio" name="rerollWhich" value="${i}" ${i === 0 ? "checked" : ""}><span>${esc(SKILL_LABEL[c.skill])} ${c.total}</span></label>`).join("")}</div>`
+        : `<div class="which">Rerolls your d20. You must keep the new result.</div>`;
+      hero = `<div class="srt-hero">&#9733; <b>Hero Point:</b> you have ${heroLeft}. ${pickWhich}<small>Use the button below the dialog.</small></div>`;
+    }
+    resultHtml = `<div class="srt-locked"><div class="cap">Already rolled this section &mdash; your choices are locked</div>${card}${hero}</div>`;
+  }
+  return `<div class="srt-dialog">${resultHtml}<p class="srt-intro">${esc(menu.intro)}</p>${body}${targetHtml}${helpHtml}</div>`;
+}
+
+/** Reads the roll dialog's form into the request fields (the Narrows route has its own hidden choice). */
+export function readRerollForm(fd) {
+  return { which: Number(fd.get("rerollWhich") || 0) };
+}
+
+export function readDialogForm(fd) {
+  const narrows = fd.get("route") === "narrows";
+  return {
+    choiceId: narrows ? fd.get("narrowsChoice") : fd.get("choice"),
+    lineId: narrows ? undefined : (fd.get("line") || undefined),
+    target: fd.get("target") || undefined,
+    bench: Number(fd.get("bench") || 0),
+    spendFavor: fd.get("spendFavor") === "on",
+    narrows: narrows ? fd.getAll("narrows") : [],
+  };
 }

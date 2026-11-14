@@ -2,7 +2,7 @@
  * View helpers shared by the Foundry window and the browser preview. Pure JavaScript.
  */
 import {
-  ROSTER, GAP_CAP, SECTION_NAME, OBSTACLE,
+  ROSTER, GAP_CAP, SECTION_NAME, OBSTACLE, sectionNumber,
   standings, nextSection, isFinished, signed, sectionLimits, ADJ_LIMITS,
   normalizeState,
 } from "./engine.mjs";
@@ -39,8 +39,8 @@ export function towerContext(state, { isGM = false, portraitFor = null, canRoll 
     started: !!last,
     lapLabel: finished ? "FINISH" : `LAP ${Math.min(state.lap, 4)}/4`,
     subtitle: finished ? "Final standings"
-      : last ? `After ${SECTION_NAME[last.key]}${last.key === "B" ? ` · ${OBSTACLE[last.lap]}` : ""}` : "On the grid",
-    nextLabel: nx ? `Lap ${nx.lap}, ${nx.key} · ${nx.name}${nx.key === "B" ? ` (${OBSTACLE[nx.lap]})` : ""}` : "Race over",
+      : last ? `After section ${sectionNumber(last.lap, last.key)}/16 · Lap ${last.lap} ${last.key}, ${SECTION_NAME[last.key]}${last.key === "B" ? ` · ${OBSTACLE[last.lap]}` : ""}` : "On the grid",
+    nextLabel: nx ? `Section ${sectionNumber(nx.lap, nx.key)}/16 · Lap ${nx.lap} ${nx.key}, ${nx.name}${nx.key === "B" ? ` (${OBSTACLE[nx.lap]})` : ""}` : "Race over",
     isGM,
     showShelter: state.lap === 2,
     limitText,

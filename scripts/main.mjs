@@ -12,7 +12,7 @@ import { captureTops, playSlides } from "./animate.mjs";
 import { captureDraft, applyDraft } from "./draft.mjs";
 import {
   SKILL_LABEL, PARTY_BONUS, sectionMenu, validatePcRequest, computeMod, applyPcCheck, applyNarrows, clearPcRoll,
-  eligibleTargets, planNpcDice, degreeOf, buildNpcDiceHtml, buildDcCardHtml, buildPcRollHtml, buildNarrowsHtml, buildDialogHtml,
+  eligibleTargets, planNpcDice, readDialogForm, readRerollForm, rerollPcRoll, degreeOf, buildNpcDiceHtml, buildDcCardHtml, buildPcRollHtml, buildNarrowsHtml, buildDialogHtml,
 } from "./rolls.mjs";
 
 const MODULE_ID = "sky-regatta-tower";
@@ -50,6 +50,20 @@ function skillMod(entry, skill) {
   if (a) m = skill === "perception" ? (a.perception?.mod ?? a.system?.perception?.mod) : (a.skills?.[skill]?.mod ?? a.system?.skills?.[skill]?.mod);
   return Number.isFinite(m) ? m : (entry.skills?.[skill] ?? 0);
 }
+/** Hero Points on the rider's PF2e actor (0 if there is no actor or the system doesn't have them). */
+function heroPointsOf(entry) {
+  const a = actorFor(entry);
+  const v = a?.system?.resources?.heroPoints?.value;
+  return Number.isFinite(v) ? v : 0;
+}
+async function spendHeroPoint(entry) {
+  const a = actorFor(entry);
+  const v = heroPointsOf(entry);
+  if (!a || v < 1) return false;
+  await a.update({ "system.resources.heroPoints.value": v - 1 });
+  return true;
+}
+
 /** The race PCs this user may roll for (the GM may roll for both). */
 function ridersFor(user) {
   return ROSTER.filter((r) => r.pc).filter((r) => {
@@ -186,6 +200,38 @@ async function executePcRoll(req, userId) {
   });
 }
 
+/** Runs on the active GM's client: spend a Hero Point, reroll, redo the roll's effects, post the card. */
+function queueReroll(request, userId) {
+  queue = queue.then(() => executeReroll(request, userId)).catch((err) => { console.error(`${MODULE_ID} | reroll failed`, err); reject(userId, "Something went wrong with that reroll. Tell the GM."); });
+}
+async function executeReroll(req, userId) {
+  const state = getState() ?? freshState();
+  const user = game.users.get(userId);
+  const entry = ROSTER.find((r) => r.id === req.pcId && r.pc);
+  const actor = entry ? actorFor(entry) : null;
+  if (!user || !entry) return reject(userId, "That rider isn't in the race.");
+  if (!user.isGM && !(actor && actor.testUserPermission(user, "OWNER"))) return reject(userId, `You don't control ${entry.name}.`);
+  const pend = state.pending[entry.id];
+  if (!pend) return reject(userId, "There is no roll to reroll.");
+  if (pend.heroUsed) return reject(userId, "A Hero Point has already been spent on this roll.");
+  if (heroPointsOf(entry) < 1) return reject(userId, `${entry.name} has no Hero Points.`);
+  const roll = await new Roll("1d20").evaluate();
+  const res = rerollPcRoll(state, entry.id, roll.total, Number(req.which) || 0);
+  if (!res.ok) return reject(userId, res.error);
+  await spendHeroPoint(entry);
+  await saveState(state);
+  const p = res.pending;
+  const speaker = ChatMessage.getSpeaker({ actor });
+  let content;
+  if (p.skill === "narrows") content = buildNarrowsHtml({ pcName: entry.name, checks: p.checks, vp: p.suggested, notes: p.notes, auto: p.auto, reroll: p.reroll });
+  else {
+    const menu = sectionMenu(p.lap, p.key);
+    const choice = menu.choices.find((c) => c.id === p.choiceId);
+    content = buildPcRollHtml({ pcName: entry.name, choice, lineId: p.lineId, dc: p.dc, nat: p.nat, parts: res.parts, total: p.total, degree: p.degree, vp: p.suggested, notes: p.notes, auto: p.auto, reroll: p.reroll });
+  }
+  await ChatMessage.create({ speaker, whisper: gmIds(), rolls: [roll], sound: CONFIG.sounds.dice, content });
+}
+
 /** The skill picker a player sees after clicking "Roll my check". */
 async function openRollDialog(where = {}) {
   const state = getState() ?? freshState();
@@ -203,11 +249,34 @@ async function openRollDialog(where = {}) {
     entry = mine.find((r) => r.id === picked);
     if (!entry) return;
   }
-  if (state.pending[entry.id]) return ui.notifications.warn(`${entry.name} has already rolled this section: ${state.pending[entry.id].summary}`);
-
   const menu = sectionMenu(state.lap, key);
   const mods = Object.fromEntries(Object.keys(SKILL_LABEL).map((s) => [s, skillMod(entry, s)]));
   const targets = eligibleTargets(state, entry.id).filter((t) => !(key === "C" && state.lap !== 4 && state.sheltered[t.id]));
+  const done = state.pending[entry.id];
+  if (done) {
+    // already rolled: show what was picked and how it went, with nothing to change
+    const picked = await DialogV2.wait({
+      window: { title: `${entry.name}: ${menu.title} (Lap ${state.lap})` },
+      position: { width: 540 },
+      content: buildDialogHtml(state, entry.id, menu, { mods, targets, key, locked: done, heroLeft: heroPointsOf(entry) }),
+      rejectClose: false,
+      buttons: [
+        ...(!done.heroUsed && heroPointsOf(entry) > 0 ? [{
+          action: "hero", label: "Spend a Hero Point to reroll", icon: "fa-solid fa-star",
+          callback: (event, button) => ({ hero: true, ...readRerollForm(new FormData(button.form)) }),
+        }] : []),
+        { action: "close", label: "Close", icon: "fa-solid fa-xmark", default: true },
+      ],
+    });
+    if (picked && typeof picked === "object" && picked.hero) {
+      const request = { pcId: entry.id, which: picked.which };
+      if (game.user.isGM) {
+        if (!isActiveGM()) return ui.notifications.warn("Another GM is the active one; ask them to roll.");
+        queueReroll(request, game.user.id);
+      } else game.socket.emit(CHANNEL, { type: "reroll", userId: game.user.id, request });
+    }
+    return;
+  }
   const result = await DialogV2.wait({
     window: { title: `${entry.name}: ${menu.title} (Lap ${state.lap})` },
     position: { width: 540 },
@@ -217,11 +286,7 @@ async function openRollDialog(where = {}) {
       {
         action: "roll", label: "Roll!", icon: "fa-solid fa-dice-d20", default: true,
         callback: (event, button) => {
-          const fd = new FormData(button.form);
-          return {
-            choiceId: fd.get("choice"), lineId: fd.get("line") || undefined, target: fd.get("target") || undefined,
-            bench: Number(fd.get("bench") || 0), spendFavor: fd.get("spendFavor") === "on", narrows: fd.getAll("narrows"),
-          };
+          return readDialogForm(new FormData(button.form));
         },
       },
       { action: "cancel", label: "Cancel" },
@@ -413,9 +478,9 @@ Hooks.once("init", () => {
     onChange: () => app?.render(),
   });
   game.settings.register(MODULE_ID, "autoVp", {
-    name: "Player rolls set VP automatically",
-    hint: "Off (default): a player's roll shows the degree and suggests VP, and you set the VP yourself with the steppers. On: the roll's VP is filled in for you.",
-    scope: "world", config: true, type: Boolean, default: false,
+    name: "Player rolls fill in the VP",
+    hint: "On (default): a player's roll puts its VP in that rider's stepper so you don't forget it; you can still change it before you roll the section. Off: the roll only suggests VP and you enter it yourself.",
+    scope: "world", config: true, type: Boolean, default: true,
   });
   game.settings.register(MODULE_ID, "npcDice", {
     name: "Roll d20s for the NPC riders",
@@ -446,6 +511,7 @@ Hooks.once("ready", () => {
   };
   game.socket.on(CHANNEL, (data) => {
     if (data?.type === "pcRoll") { if (isActiveGM()) queuePcRoll(data.request, data.userId); }
+    else if (data?.type === "reroll") { if (isActiveGM()) queueReroll(data.request, data.userId); }
     else if (data?.type === "reject" && data.userId === game.user.id) ui.notifications.warn(data.reason);
   });
 });

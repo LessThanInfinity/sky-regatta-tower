@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Sky Regatta Standings: preview</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="../styles/regatta-0.4.4.css">
+<link rel="stylesheet" href="../styles/regatta-0.4.5.css">
 <style>
   body { margin: 0; background: #2a2a2e; font-family: system-ui, sans-serif; color: #ddd; }
   .stage { display: flex; gap: 20px; padding: 16px; flex-wrap: wrap; align-items: flex-start; }
@@ -51,7 +51,7 @@ import { captureTops, playSlides } from "../scripts/animate.mjs";
 import { captureDraft, applyDraft } from "../scripts/draft.mjs";
 import {
   SKILL_LABEL, sectionMenu, validatePcRequest, computeMod, applyPcCheck, applyNarrows, clearPcRoll, eligibleTargets,
-  planNpcDice, degreeOf, buildNpcDiceHtml, buildDcCardHtml, buildPcRollHtml, buildNarrowsHtml, buildDialogHtml,
+  planNpcDice, readDialogForm, rerollPcRoll, degreeOf, buildNpcDiceHtml, buildDcCardHtml, buildPcRollHtml, buildNarrowsHtml, buildDialogHtml,
 } from "../scripts/rolls.mjs";
 
 const tpl = Handlebars.compile(await (await fetch("../templates/tower.hbs")).text());
@@ -104,19 +104,38 @@ function npcDice(report) {
 async function rollDialog() {
   const pcId = document.getElementById("as").value, e = entry(pcId);
   const key = SECTIONS[state.sec];
-  if (state.pending[pcId]) { warn.textContent = `${e.name} has already rolled this section.`; return; }
   const menu = sectionMenu(state.lap, key);
   const mods = Object.fromEntries(Object.keys(SKILL_LABEL).map((s) => [s, skillMod(e, s)]));
   const targets = eligibleTargets(state, pcId).filter((t) => !(key === "C" && state.lap !== 4 && state.sheltered[t.id]));
-  document.getElementById("dlgbody").innerHTML = `<h3 style="margin:0 0 6px 0">${e.name}: ${menu.title} (Lap ${state.lap})</h3>` + buildDialogHtml(state, pcId, menu, { mods, targets, key });
+  document.getElementById("dlgbody").innerHTML = `<h3 style="margin:0 0 6px 0">${e.name}: ${menu.title} (Lap ${state.lap})</h3>` + buildDialogHtml(state, pcId, menu, { mods, targets, key, locked: state.pending[pcId] ?? null, heroLeft: window.__hero ?? 1 });
   const dlg = document.getElementById("dlg");
   dlg.showModal();
+  if (state.pending[pcId]) {
+    const hero = !state.pending[pcId].heroUsed && (window.__hero ?? 1) > 0;
+    const rollBtn = document.getElementById("dlgRoll");
+    rollBtn.textContent = hero ? "Spend a Hero Point to reroll" : "Close"; rollBtn.hidden = !hero;
+    const pick = await new Promise((res) => {
+      document.getElementById("dlgCancel").onclick = () => { dlg.close(); res(null); };
+      rollBtn.onclick = () => { const w = Number(new FormData(dlg.querySelector("form")).get("rerollWhich") || 0); dlg.close(); res({ which: w }); };
+    });
+    rollBtn.textContent = "Roll!"; rollBtn.hidden = false;
+    if (!pick) return;
+    const nat = window.__nat2 ?? d20();
+    const rr = rerollPcRoll(state, pcId, nat, pick.which);
+    if (!rr.ok) { warn.textContent = rr.error; return; }
+    window.__hero = (window.__hero ?? 1) - 1;
+    const p = rr.pending;
+    if (p.skill === "narrows") say(buildNarrowsHtml({ pcName: e.name, checks: p.checks, vp: p.suggested, notes: p.notes, auto: true, reroll: p.reroll }), e.name);
+    else say(buildPcRollHtml({ pcName: e.name, choice: { group: p.group, skill: p.skill }, lineId: p.lineId, dc: p.dc, nat: p.nat, parts: rr.parts, total: p.total, degree: p.degree, vp: p.suggested, notes: p.notes, auto: true, reroll: p.reroll }), e.name);
+    render();
+    return;
+  }
   const result = await new Promise((resolve) => {
     document.getElementById("dlgCancel").onclick = () => { dlg.close(); resolve(null); };
     document.getElementById("dlgRoll").onclick = () => {
       const fd = new FormData(dlg.querySelector("form"));
       dlg.close();
-      resolve({ choiceId: fd.get("choice"), lineId: fd.get("line") || undefined, target: fd.get("target") || undefined, bench: Number(fd.get("bench") || 0), spendFavor: fd.get("spendFavor") === "on", narrows: fd.getAll("narrows") });
+      resolve(readDialogForm(fd));
     };
   });
   if (!result) return;
@@ -125,16 +144,16 @@ async function rollDialog() {
   if (!v.ok) { warn.textContent = v.error; return; }
   if (v.choice.special === "narrows") {
     const rolls = [...new Set(request.narrows)].map((skill) => ({ skill, nat: d20(), mod: computeMod(state, pcId, "N", { bench: request.bench }, skillMod(e, skill)).total }));
-    const res = applyNarrows(state, request, rolls, { autoVp: false });
+    const res = applyNarrows(state, request, rolls, { autoVp: true });
     if (!res.ok) { warn.textContent = res.error; return; }
-    say(buildNarrowsHtml({ pcName: e.name, checks: res.checks, vp: res.pending.suggested, notes: res.pending.notes, auto: false }), e.name);
+    say(buildNarrowsHtml({ pcName: e.name, checks: res.checks, vp: res.pending.suggested, notes: res.pending.notes, auto: true }), e.name);
   } else {
     const m = computeMod(state, pcId, v.key, request, skillMod(e, v.choice.skill));
     const nat = d20();
-    const res = applyPcCheck(state, request, { nat: window.__nat ?? nat, mod: m.total, parts: m.parts }, { autoVp: false });
+    const res = applyPcCheck(state, request, { nat: window.__nat ?? nat, mod: m.total, parts: m.parts }, { autoVp: true });
     if (!res.ok) { warn.textContent = res.error; return; }
     const p = res.pending;
-    say(buildPcRollHtml({ pcName: e.name, choice: v.choice, lineId: v.lineId, dc: v.dc, nat: window.__nat ?? nat, parts: m.parts, total: p.total, degree: p.degree, vp: p.suggested, notes: p.notes, auto: false }), e.name);
+    say(buildPcRollHtml({ pcName: e.name, choice: v.choice, lineId: v.lineId, dc: v.dc, nat: window.__nat ?? nat, parts: m.parts, total: p.total, degree: p.degree, vp: p.suggested, notes: p.notes, auto: true }), e.name);
   }
   render();
 }

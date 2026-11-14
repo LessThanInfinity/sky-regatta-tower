@@ -9,6 +9,8 @@ export const MAX_NPC_ATTACKS = 2;  // at most this many NPCs attack per Battle
 export const LAP_TABLE = { 1: 3, 2: 3, 3: 5, 4: 5, 5: 6, 6: 8 };
 export const SECTIONS = ["A", "B", "C", "D"];
 export const SECTION_NAME = { A: "Entry", B: "Obstacle", C: "Battle", D: "Sprint" };
+/** 1 to 16: which section of the race this is (4 laps of 4). */
+export const sectionNumber = (lap, key) => (lap - 1) * 4 + SECTIONS.indexOf(key) + 1;
 export const OBSTACLE = { 1: "Bell Gate", 2: "Rising Hall", 3: "Cable Web", 4: "Sponsors' Rings" };
 
 // rating: Ace +1, Steady 0, Rookie -1.  tag: aggressive | cautious | hothead | showboat | steady
@@ -256,7 +258,7 @@ export function undo(state) {
 /** GM-only chat message: one list entry per rider, easy to read in a narrow sidebar. */
 export function buildReport(state, rep) {
   const rows = standings(state.vp);
-  const title = `Sky Regatta: Lap ${rep.lap}, Section ${rep.key} (${SECTION_NAME[rep.key]}${rep.key === "B" ? ": " + OBSTACLE[rep.lap] : ""})`;
+  const title = `Sky Regatta: Section ${sectionNumber(rep.lap, rep.key)}/16 · Lap ${rep.lap}, ${rep.key} (${SECTION_NAME[rep.key]}${rep.key === "B" ? ": " + OBSTACLE[rep.lap] : ""})`;
   const body = rows.map((r) => {
     const delta = r.total - rep.before[r.id];
     const gap = r.gap === 0 ? "LEADER" : `${r.gap}${r.gap === GAP_CAP ? "+" : ""} back`;

@@ -276,20 +276,64 @@ export function npcSkillOptions(lap, key, isAttacker) {
   for (const c of menu.choices) if (c.skill !== "narrows") out.push([c.skill, c.line ?? null]);
   return out;
 }
-/** Picks each NPC's skill and DC for the show: personality sets the line, the best modifier picks the skill. */
-export function planNpcDice(npcs, lap, key, modFor, attackerIds = new Set()) {
+const ENTRY_ACTION = { nature: "Command the drake", acrobatics: "Hold the line", athletics: "Muscle through", survival: "Read the wind", performance: "Flair", deception: "Psych out", intimidation: "Psych out" };
+const BATTLE_ACTION = { athletics: "Bump", acrobatics: "Cut off", deception: "Distract", intimidation: "Distract", performance: "Distract", nature: "Draft" };
+const CONTEST_ENTRY = new Set(["deception", "intimidation", "athletics"]);   // Psych out and Muscle through name a rival
+
+/**
+ * The rider an NPC is up against, going by the standings before the section: the nearest one ahead (the one they're
+ * chasing), or the nearest chaser if they lead. Never a teammate. Ties for "nearest" are broken at random (`rand`).
+ */
+export function positionTarget(npc, before, rand = Math.random) {
+  const rows = ROSTER.map((r) => ({ r, total: before?.[r.id] ?? 0 }));
+  const me = rows.find((o) => o.r.id === npc.id);
+  const others = rows.filter((o) => o.r.id !== npc.id && o.r.team !== npc.team);
+  const pickNearest = (list, by) => {
+    if (!list.length) return null;
+    const best = list.reduce((m, o) => (by(o) < by(m) ? o : m), list[0]);
+    const tied = list.filter((o) => by(o) === by(best));
+    return tied[Math.floor(rand() * tied.length)].r.name;
+  };
+  const ahead = others.filter((o) => o.total > me.total);
+  if (ahead.length) return pickNearest(ahead, (o) => o.total - me.total);
+  return pickNearest(others, (o) => me.total - o.total);       // none ahead: the closest chaser
+}
+
+/**
+ * Picks each NPC's skill, DC, action and target for the show: personality sets the line, the best modifier picks the skill.
+ * ctx: { before: VP before the section, battleTargets: { npcId: { kind: "attack" | "draft", target } }, rand }.
+ */
+export function planNpcDice(npcs, lap, key, modFor, attackerIds = new Set(), ctx = {}) {
   return npcs.map((n) => {
     const lineId = n.tag === "aggressive" ? "risky" : n.tag === "cautious" ? "safe" : "standard";
-    const opts = npcSkillOptions(lap, key, attackerIds.has(n.id));
+    let opts = npcSkillOptions(lap, key, attackerIds.has(n.id));
+    // A Draft is a Nature check (that's how it works for the PCs too), so show it as one.
+    if (key === "C" && !attackerIds.has(n.id) && ctx.battleTargets?.[n.id]?.kind === "draft") opts = [["nature", null]];
     let best = null;
     for (const [skill, fixedLine] of opts) {
       const line = key === "C" ? null : (fixedLine ?? lineId);
       const dc = key === "C" ? BATTLE_DC : LINES[line].dc;
       const mod = modFor(n, skill);
       const margin = mod - dc;
-      if (!best || margin > best.margin) best = { skill, line, dc, mod, margin };
+      if (!best || margin > best.margin) best = { skill, line, fixedLine, dc, mod, margin };
     }
-    return { id: n.id, name: n.name, skill: best.skill, mod: best.mod, dc: best.dc, lineLabel: best.line ? LINES[best.line].label : (attackerIds.has(n.id) ? "Attack" : "Hold the line") };
+    let action = "", target = null;
+    if (key === "A") {
+      action = ENTRY_ACTION[best.skill] ?? "";
+      if (CONTEST_ENTRY.has(best.skill)) target = positionTarget(n, ctx.before, ctx.rand);
+    } else if (key === "B") {
+      const c = sectionMenu(lap, "B").choices.find((x) => x.skill === best.skill && (best.fixedLine ? x.line === best.fixedLine : true));
+      action = c?.group ?? "Obstacle";
+    } else if (key === "C") {
+      const bt = ctx.battleTargets?.[n.id];
+      if (attackerIds.has(n.id)) { action = BATTLE_ACTION[best.skill] ?? "Attack"; target = bt?.target ?? null; }
+      else if (bt?.kind === "draft") { action = "Draft"; target = bt.target; }
+      else action = "Hold the line";
+    } else action = "Sprint";
+    return {
+      id: n.id, name: n.name, skill: best.skill, mod: best.mod, dc: best.dc, action, target,
+      lineLabel: best.line ? LINES[best.line].label : (attackerIds.has(n.id) ? "Attack" : "Hold the line"),
+    };
   });
 }
 
@@ -301,9 +345,14 @@ const vpLine = (vp, auto) => (auto ? `<b>${signed(vp)} VP</b>` : `<b>Suggested: 
 
 /** The six NPC d20s for the show: one tidy row per rider. */
 export function buildNpcDiceHtml(lap, key, rows) {
-  const lines = rows.map((r) => `<div class="frow"><div class="top"><span class="who">${esc(r.name)}</span>${degPill(r.degree)}</div>`
-    + `<div class="det">${esc(r.lineLabel)} · ${esc(SKILL_LABEL[r.skill])} ${signed(r.mod)} · DC ${r.dc}</div>`
-    + `<div class="calc">d20 <b>${r.nat}</b> ${signed(r.mod)} = <b>${r.total}</b></div></div>`).join("");
+  const lines = rows.map((r) => {
+    const what = r.action ? `${esc(r.action)} (${esc(SKILL_LABEL[r.skill])} ${signed(r.mod)})` : `${esc(SKILL_LABEL[r.skill])} ${signed(r.mod)}`;
+    const how = key === "C" ? `DC ${r.dc}` : `${esc(r.lineLabel)} · DC ${r.dc}`;
+    return `<div class="frow"><div class="top"><span class="who">${esc(r.name)}</span>${degPill(r.degree)}</div>`
+      + `<div class="det">${what} · ${how}</div>`
+      + (r.target ? `<div class="tgt">&rarr; targets <b>${esc(r.target)}</b></div>` : "")
+      + `<div class="calc">d20 <b>${r.nat}</b> ${signed(r.mod)} = <b>${r.total}</b></div></div>`;
+  }).join("");
   return `<div class="srt-card srt-field">${cardHead("The field rolls", sectionTitle(lap, key))}${lines}</div>`;
 }
 

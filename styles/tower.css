@@ -219,3 +219,5 @@
 .srt-field .frow .who { font-weight: 700; }
 .srt-field .frow .det { font-size: 0.7rem; opacity: 0.7; }
 .srt-field .frow .calc { font-size: 0.78rem; }
+.srt-field .frow .tgt { font-size: 0.74rem; color: #ffb36b; }
+.srt-field .frow .tgt b { color: #ffd3a6; }

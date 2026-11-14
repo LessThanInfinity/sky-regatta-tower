@@ -87,7 +87,13 @@ function updateReadout(input) {
 function npcDice(report) {
   const npcs = ROSTER.filter((r) => !r.pc);
   const attackers = new Set(npcs.filter((n) => (report.notes[n.id] ?? []).some((t) => t.startsWith("Attacks "))).map((n) => n.id));
-  const rows = planNpcDice(npcs, report.lap, report.key, skillMod, attackers).map((p) => {
+  const battleTargets = {};
+  for (const n of npcs) for (const t of report.notes[n.id] ?? []) {
+    let mt;
+    if ((mt = /^Attacks ([^:]+):/.exec(t))) battleTargets[n.id] = { kind: "attack", target: mt[1] };
+    else if ((mt = /^Draft behind ([^:]+):/.exec(t))) battleTargets[n.id] = { kind: "draft", target: mt[1] };
+  }
+  const rows = planNpcDice(npcs, report.lap, report.key, skillMod, attackers, { before: report.before, battleTargets }).map((p) => {
     const nat = d20(); const total = nat + p.mod;
     return { ...p, nat, total, degree: degreeOf(total, p.dc, nat) };
   });

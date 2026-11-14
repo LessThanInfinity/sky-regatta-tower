@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { freshState, resolveSection, ROSTER } from "../scripts/engine.mjs";
 import {
   degreeOf, lineVp, sectionMenu, validatePcRequest, applyPcCheck, applyNarrows, clearPcRoll, computeMod, eligibleTargets,
-  planNpcDice, buildDialogHtml, buildDcCardHtml, buildNpcDiceHtml, buildPcRollHtml, LINES,
+  planNpcDice, positionTarget, buildDialogHtml, buildDcCardHtml, buildNpcDiceHtml, buildPcRollHtml, LINES,
 } from "../scripts/rolls.mjs";
 
 const d6 = async () => 1 + Math.floor(Math.random() * 6);
@@ -306,4 +306,55 @@ test("the cards say when VP is only a suggestion", () => {
   const base = { pcName: "Violet", choice, lineId: "standard", dc: 30, nat: 14, parts: [{ label: "skill", value: 23 }], total: 37, degree: "success", vp: 2, notes: [] };
   assert.match(buildPcRollHtml({ ...base, auto: false }), /Suggested: \+2 VP/);
   assert.match(buildPcRollHtml({ ...base, auto: true }), /<b>\+2 VP<\/b>/);
+});
+
+test("position targets: the nearest rider ahead, never a teammate; the leader faces the closest chaser", () => {
+  const before = { violet: 9, aji: 8, viridian: 7, ivory: 6, syu: 5, ranto: 4, sarah: 3, dutch: 2 };
+  const npc = (id) => NPCS.find((n) => n.id === id);
+  assert.equal(positionTarget(npc("syu"), before), "Ivory");          // nearest ahead of Syu (5) is Ivory (6)
+  assert.equal(positionTarget(npc("ivory"), before), "Aji");           // Viridian (7) is a teammate, so Ivory looks past him to Aji (8)
+  assert.equal(positionTarget(npc("viridian"), before), "Aji");       // next ahead of Viridian (7) is Aji (8)
+  const lead = { ...before, ranto: 20 };
+  assert.equal(positionTarget(npc("ranto"), lead), "Violet");         // leader: the closest chaser is Violet (9); Syu is a teammate
+  const teamOf = Object.fromEntries(ROSTER.map((r) => [r.name, r.team]));
+  for (let i = 0; i < 50; i++) for (const n of NPCS) assert.notEqual(teamOf[positionTarget(n, before)], n.team);
+});
+
+test("when everyone is level the target is picked at random among the non-teammates", () => {
+  const level = Object.fromEntries(ROSTER.map((r) => [r.id, 0]));
+  const seen = new Set();
+  for (let i = 0; i < 80; i++) seen.add(positionTarget(NPCS.find((n) => n.id === "syu"), level));
+  assert.ok(seen.size > 1, "not always the same rider");
+  assert.ok(!seen.has("Syu Tak-nwa") && !seen.has("Ran-to"));
+});
+
+test("Entry contest skills name a target, other skills don't; Battle uses the real attack target", () => {
+  const modFor = (n, sk) => n.skills[sk] ?? 0;
+  const before = { violet: 3, aji: 2, viridian: 5, ivory: 4, syu: 6, ranto: 6, sarah: 1, dutch: 0 };
+  const entry = planNpcDice(NPCS, 1, "A", modFor, new Set(), { before, rand: () => 0 });
+  const byId = Object.fromEntries(entry.map((p) => [p.id, p]));
+  assert.equal(byId.viridian.action, "Psych out");
+  assert.ok(byId.viridian.target);                          // Deception is a contest skill
+  assert.equal(byId.ranto.action, "Muscle through");        // Athletics +30
+  assert.ok(byId.ranto.target && byId.ranto.target !== "Syu Tak-nwa");
+  const sprint = planNpcDice(NPCS, 1, "D", modFor, new Set(), { before });
+  assert.ok(sprint.every((p) => p.action === "Sprint" && p.target === null));
+  const battle = planNpcDice(NPCS, 1, "C", modFor, new Set(["syu"]), { before, battleTargets: { syu: { kind: "attack", target: "Ivory" }, dutch: { kind: "draft", target: "Sarah" } } });
+  const b = Object.fromEntries(battle.map((p) => [p.id, p]));
+  assert.equal(b.syu.target, "Ivory");
+  assert.ok(["Bump", "Cut off", "Distract"].includes(b.syu.action));
+  assert.equal(b.dutch.action, "Draft");
+  assert.equal(b.dutch.skill, "nature");                     // a Draft is a Nature check
+  assert.equal(b.dutch.target, "Sarah");
+  assert.equal(b.sarah.action, "Hold the line");
+  assert.equal(b.sarah.target, null);
+  const lane = planNpcDice(NPCS, 1, "B", modFor, new Set(), { before });
+  assert.ok(lane.every((p) => /lane/.test(p.action)));
+});
+
+test("the field card shows the action and the target", () => {
+  const html = buildNpcDiceHtml(1, "A", [{ name: "Viridian", action: "Psych out", target: "Aji", lineLabel: "Push", skill: "deception", mod: 28, dc: 30, nat: 15, total: 43, degree: "critSuccess" }]);
+  assert.match(html, /Psych out \(Deception \+28\)/);
+  assert.match(html, /targets <b>Aji<\/b>/);
+  assert.doesNotMatch(buildNpcDiceHtml(1, "D", [{ name: "Ivory", action: "Sprint", target: null, lineLabel: "Hold pace", skill: "nature", mod: 4, dc: 28, nat: 10, total: 14, degree: "failure" }]), /targets/);
 });

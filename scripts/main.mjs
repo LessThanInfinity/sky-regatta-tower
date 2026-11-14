@@ -77,7 +77,14 @@ async function rollNext(input = {}, unlocked = false) {
 async function postNpcDice(report) {
   const npcs = ROSTER.filter((r) => !r.pc);
   const attackers = new Set(npcs.filter((n) => (report.notes[n.id] ?? []).some((t) => t.startsWith("Attacks "))).map((n) => n.id));
-  const plan = planNpcDice(npcs, report.lap, report.key, skillMod, attackers);
+  // who each NPC actually went after in Battle (the engine already decided), so the show matches the result
+  const battleTargets = {};
+  for (const n of npcs) for (const t of report.notes[n.id] ?? []) {
+    let mt;
+    if ((mt = /^Attacks ([^:]+):/.exec(t))) battleTargets[n.id] = { kind: "attack", target: mt[1] };
+    else if ((mt = /^Draft behind ([^:]+):/.exec(t))) battleTargets[n.id] = { kind: "draft", target: mt[1] };
+  }
+  const plan = planNpcDice(npcs, report.lap, report.key, skillMod, attackers, { before: report.before, battleTargets });
   const rolls = [];
   const rows = [];
   for (const p of plan) {

@@ -263,3 +263,35 @@ test("eligible targets are NPCs within 2 VP, never a teammate", () => {
   assert.deepEqual(ids, ["ivory", "sarah", "syu"].sort());
   assert.ok(!ids.includes("aji"));
 });
+
+test("manual VP mode: a roll shows the degree and suggests VP, but the GM sets the VP", async () => {
+  const s = freshState();
+  const r = applyPcCheck(s, req({ choiceId: "command-the-drake:nature" }), roll(15, 20), { autoVp: false });   // success
+  assert.equal(r.pending.suggested, 2);
+  assert.equal(r.pending.vp, 0);
+  assert.equal(r.pending.auto, false);
+  assert.match(r.pending.summary, /suggests \+2 VP/);
+  assert.deepEqual(s.used.violet, ["nature"]);                          // the skill still counts as used
+  await resolveSection(s, {}, d6);                                       // nothing typed: no VP given
+  assert.equal(s.vp.violet, 0);
+  const t = freshState();
+  applyPcCheck(t, req({ choiceId: "command-the-drake:nature" }), roll(15, 20), { autoVp: false });
+  await resolveSection(t, { violet: 3 }, d6);                           // the GM types +3 (a crit's worth)
+  assert.equal(t.vp.violet, 3);
+});
+
+test("manual VP mode still applies the non-VP effects (Favor, drake, rival adjustments)", () => {
+  const s = freshState();
+  applyPcCheck(s, req({ choiceId: "flair:performance" }), roll(15, 20), { autoVp: false });
+  assert.equal(s.favor.party, 1);
+  const t = freshState();
+  applyPcCheck(t, req({ target: "ranto" }), roll(12, 20), { autoVp: false });
+  assert.equal(t.pendingAdj.ranto, -1);
+});
+
+test("the cards say when VP is only a suggestion", () => {
+  const choice = sectionMenu(1, "A").choices[2];
+  const base = { pcName: "Violet", choice, lineId: "standard", dc: 30, nat: 14, parts: [{ label: "skill", value: 23 }], total: 37, degree: "success", vp: 2, notes: [] };
+  assert.match(buildPcRollHtml({ ...base, auto: false }), /Suggested: \+2 VP/);
+  assert.match(buildPcRollHtml({ ...base, auto: true }), /<b>\+2 VP<\/b>/);
+});

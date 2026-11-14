@@ -9,6 +9,7 @@ import {
 } from "./engine.mjs";
 import { towerContext, validateInput, readoutFor } from "./view.mjs";
 import { captureTops, playSlides } from "./animate.mjs";
+import { captureDraft, applyDraft } from "./draft.mjs";
 import {
   SKILL_LABEL, PARTY_BONUS, sectionMenu, validatePcRequest, computeMod, applyPcCheck, applyNarrows, clearPcRoll,
   eligibleTargets, planNpcDice, degreeOf, buildNpcDiceHtml, buildDcCardHtml, buildPcRollHtml, buildNarrowsHtml, buildDialogHtml,
@@ -29,6 +30,7 @@ const getState = () => {
 };
 const saveState = (state) => game.settings.set(MODULE_ID, "state", state);
 const opts = () => ({ npcFouls: game.settings.get(MODULE_ID, "npcFouls") });
+const autoVp = () => game.settings.get(MODULE_ID, "autoVp");
 const d6 = async () => (await new Roll("1d6").evaluate()).total;
 const isActiveGM = () => game.user.isGM && game.users.activeGM?.id === game.user.id;
 
@@ -156,22 +158,22 @@ async function executePcRoll(req, userId) {
       rolls.push({ skill, nat: roll.total, mod });
       chat.push(roll);
     }
-    const res = applyNarrows(state, req, rolls);
+    const res = applyNarrows(state, req, rolls, { autoVp: autoVp() });
     if (!res.ok) return reject(userId, res.error);
     await saveState(state);
-    await ChatMessage.create({ speaker, rolls: chat, sound: CONFIG.sounds.dice, content: buildNarrowsHtml({ pcName: entry.name, checks: res.checks, vp: res.pending.vp, notes: res.pending.notes }) });
+    await ChatMessage.create({ speaker, rolls: chat, sound: CONFIG.sounds.dice, content: buildNarrowsHtml({ pcName: entry.name, checks: res.checks, vp: res.pending.suggested, notes: res.pending.notes, auto: autoVp() }) });
     return;
   }
 
   const m = computeMod(state, entry.id, v.key, req, skillMod(entry, v.choice.skill));
   const roll = await new Roll("1d20").evaluate();
-  const res = applyPcCheck(state, req, { nat: roll.total, mod: m.total, parts: m.parts });
+  const res = applyPcCheck(state, req, { nat: roll.total, mod: m.total, parts: m.parts }, { autoVp: autoVp() });
   if (!res.ok) return reject(userId, res.error);
   await saveState(state);
   const p = res.pending;
   await ChatMessage.create({
     speaker, rolls: [roll], sound: CONFIG.sounds.dice,
-    content: buildPcRollHtml({ pcName: entry.name, choice: v.choice, lineId: v.lineId, dc: v.dc, nat: roll.total, parts: m.parts, total: p.total, degree: p.degree, vp: p.vp, notes: p.notes }),
+    content: buildPcRollHtml({ pcName: entry.name, choice: v.choice, lineId: v.lineId, dc: v.dc, nat: roll.total, parts: m.parts, total: p.total, degree: p.degree, vp: p.suggested, notes: p.notes, auto: autoVp() }),
   });
 }
 
@@ -276,6 +278,7 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
       show: SkyRegattaTower.#onShow,
       postDcs: SkyRegattaTower.#onPostDcs,
       rollCheck: SkyRegattaTower.#onRollCheck,
+      useSuggested: SkyRegattaTower.#onUseSuggested,
       clearRoll: SkyRegattaTower.#onClearRoll,
       drake: SkyRegattaTower.#onDrake,
       favor: SkyRegattaTower.#onFavor,
@@ -285,9 +288,12 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
   static PARTS = { tower: { template: `modules/${MODULE_ID}/templates/tower.hbs` } };
 
   #prevTops = null;    // row positions before this redraw, for the slide animation
+  #draft = null;       // what the GM had typed in the control bar before this redraw
+  #sectionKey = null;  // lap-and-section of the last render
 
   async _prepareContext() {
     this.#prevTops = this.element ? captureTops(this.element) : null;   // the old rows are still on screen here
+    this.#draft = game.user.isGM ? captureDraft(this.element, this.#sectionKey) : null;
     const state = getState() ?? freshState();
     const showPortraits = game.settings.get(MODULE_ID, "showPortraits");
     return towerContext(state, {
@@ -305,6 +311,12 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
     for (const input of this.element.querySelectorAll("input[data-kind='pc']")) {
       input.addEventListener("input", () => this.#updateReadout(input));
     }
+    const st = getState() ?? freshState();
+    const key = `${st.lap}-${st.sec}`;
+    // A player rolling shouldn't wipe what the GM typed: put it back while we're still in the same section.
+    applyDraft(this.element, this.#draft, key, (el) => { if (el.dataset.kind === "pc") this.#updateReadout(el); });
+    this.#draft = null;
+    this.#sectionKey = key;
   }
 
   #updateReadout(input) {
@@ -344,6 +356,12 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
   static async #onShow() { await showToPlayers(); }
   static async #onPostDcs() { await postDcCard(); }
   static async #onRollCheck() { await openRollDialog(); }
+  static #onUseSuggested(event, target) {
+    const input = this.element.querySelector(`input[name="${target.dataset.for}"]`);
+    if (!input) return;
+    input.value = Number(target.dataset.value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
   static async #onClearRoll(event, target) { await clearRoll(target.dataset.pc); }
   static async #onDrake(event, target) { await adjustDrake(target.dataset.pc, Number(target.dataset.dir)); }
   static async #onFavor(event, target) { await adjustFavor(Number(target.dataset.dir)); }
@@ -384,6 +402,11 @@ Hooks.once("init", () => {
     hint: "Show each rider's actor image next to their name (looks actors up by name).",
     scope: "world", config: true, type: Boolean, default: false,
     onChange: () => app?.render(),
+  });
+  game.settings.register(MODULE_ID, "autoVp", {
+    name: "Player rolls set VP automatically",
+    hint: "Off (default): a player's roll shows the degree and suggests VP, and you set the VP yourself with the steppers. On: the roll's VP is filled in for you.",
+    scope: "world", config: true, type: Boolean, default: false,
   });
   game.settings.register(MODULE_ID, "npcDice", {
     name: "Roll d20s for the NPC riders",

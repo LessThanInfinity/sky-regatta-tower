@@ -48,6 +48,7 @@
 import { ROSTER, SECTIONS, freshState, resolveSection, undo, buildReport } from "../scripts/engine.mjs";
 import { towerContext, validateInput, readoutFor } from "../scripts/view.mjs";
 import { captureTops, playSlides } from "../scripts/animate.mjs";
+import { captureDraft, applyDraft } from "../scripts/draft.mjs";
 import {
   SKILL_LABEL, sectionMenu, validatePcRequest, computeMod, applyPcCheck, applyNarrows, clearPcRoll, eligibleTargets,
   planNpcDice, degreeOf, buildNpcDiceHtml, buildDcCardHtml, buildPcRollHtml, buildNarrowsHtml, buildDialogHtml,
@@ -63,12 +64,17 @@ const say = (html, who = "", gmOnly = false) => { chat.insertAdjacentHTML("after
 const entry = (id) => ROSTER.find((r) => r.id === id);
 const skillMod = (e, sk) => e.skills?.[sk] ?? 0;
 
+let sectionKey = null;
 function render() {
   const prevGm = captureTops(gm), prevPlayer = captureTops(player);
+  const draft = captureDraft(gm, sectionKey);          // keep what the GM typed if only a player's roll changed
   gm.innerHTML = tpl(towerContext(state, { isGM: true, canRoll: true }));
   player.innerHTML = tpl(towerContext(state, { isGM: false, canRoll: true }));
   window.__slides = playSlides(player, prevPlayer) + playSlides(gm, prevGm);
   for (const input of gm.querySelectorAll("input[data-kind='pc']")) input.addEventListener("input", () => updateReadout(input));
+  const key = `${state.lap}-${state.sec}`;
+  window.__restored = applyDraft(gm, draft, key, (el) => { if (el.dataset.kind === "pc") updateReadout(el); });
+  sectionKey = key;
 }
 function updateReadout(input) {
   const { total, ok } = readoutFor(Number(input.dataset.base), input.value, Number(input.dataset.min), Number(input.dataset.max));
@@ -113,16 +119,16 @@ async function rollDialog() {
   if (!v.ok) { warn.textContent = v.error; return; }
   if (v.choice.special === "narrows") {
     const rolls = [...new Set(request.narrows)].map((skill) => ({ skill, nat: d20(), mod: computeMod(state, pcId, "N", { bench: request.bench }, skillMod(e, skill)).total }));
-    const res = applyNarrows(state, request, rolls);
+    const res = applyNarrows(state, request, rolls, { autoVp: false });
     if (!res.ok) { warn.textContent = res.error; return; }
-    say(buildNarrowsHtml({ pcName: e.name, checks: res.checks, vp: res.pending.vp, notes: res.pending.notes }), e.name);
+    say(buildNarrowsHtml({ pcName: e.name, checks: res.checks, vp: res.pending.suggested, notes: res.pending.notes, auto: false }), e.name);
   } else {
     const m = computeMod(state, pcId, v.key, request, skillMod(e, v.choice.skill));
     const nat = d20();
-    const res = applyPcCheck(state, request, { nat, mod: m.total, parts: m.parts });
+    const res = applyPcCheck(state, request, { nat: window.__nat ?? nat, mod: m.total, parts: m.parts }, { autoVp: false });
     if (!res.ok) { warn.textContent = res.error; return; }
     const p = res.pending;
-    say(buildPcRollHtml({ pcName: e.name, choice: v.choice, lineId: v.lineId, dc: v.dc, nat, parts: m.parts, total: p.total, degree: p.degree, vp: p.vp, notes: p.notes }), e.name);
+    say(buildPcRollHtml({ pcName: e.name, choice: v.choice, lineId: v.lineId, dc: v.dc, nat: window.__nat ?? nat, parts: m.parts, total: p.total, degree: p.degree, vp: p.suggested, notes: p.notes, auto: false }), e.name);
   }
   render();
 }
@@ -140,6 +146,9 @@ function onClick(ev) {
     let v = (Number(input.value) || 0) + Number(btn.dataset.dir);
     if (!unlocked()) v = Math.min(Number(input.dataset.max), Math.max(Number(input.dataset.min), v));
     input.value = v; input.dispatchEvent(new Event("input", { bubbles: true }));
+  } else if (action === "useSuggested") {
+    const input = gm.querySelector(`input[name="${btn.dataset.for}"]`);
+    input.value = Number(btn.dataset.value); input.dispatchEvent(new Event("input", { bubbles: true }));
   } else if (action === "rollCheck") rollDialog();
   else if (action === "postDcs") { say(buildDcCardHtml(state, state.lap, SECTIONS[state.sec]), "Sky Regatta"); }
   else if (action === "clearRoll") { clearPcRoll(state, btn.dataset.pc); render(); }

@@ -65,7 +65,9 @@
         </span>
         <span class="srt-hint" data-hint-for="{{id}}">allowed {{min}} to {{max}} this section</span>
         {{#if hasPending}}
-        <span class="srt-rolled">{{rolledText}} <button type="button" class="srt-link" data-action="clearRoll" data-pc="{{id}}">clear roll</button></span>
+        <span class="srt-rolled">{{rolledText}}
+          {{#if showSuggest}}<button type="button" class="srt-link srt-use" data-action="useSuggested" data-for="gain_{{id}}" data-value="{{suggested}}">use {{suggestedText}}</button>{{/if}}
+          <button type="button" class="srt-link" data-action="clearRoll" data-pc="{{id}}">clear roll</button></span>
         {{else}}
         <span class="srt-rolled none">hasn't rolled yet</span>
         {{/if}}

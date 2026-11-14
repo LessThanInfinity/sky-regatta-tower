@@ -174,7 +174,8 @@ function applyEffect(state, pcId, fx, ctx, change, notes) {
 }
 
 /** Records a PC's finished d20 as their pending roll for this section and applies its effects. */
-export function applyPcCheck(state, req, roll) {
+export function applyPcCheck(state, req, roll, options = {}) {
+  const auto = options.autoVp !== false;      // false: the roll only suggests VP and the GM sets it
   const v = validatePcRequest(state, req);
   if (!v.ok) return v;
   const { choice, lineId, dc, key } = v;
@@ -213,16 +214,17 @@ export function applyPcCheck(state, req, roll) {
   if (isLineRoll(choice)) { state.used[pcId].push(choice.skill); change.usedSkill = choice.skill; }
 
   const line = lineId ? `${LINES[lineId].label} (DC ${dc})` : `DC ${dc}`;
-  const summary = `${choice.group} (${SKILL_LABEL[choice.skill] ?? choice.skill}), ${line}: ${total} ${DEGREE_LABEL[degree]} → ${signed(vp)} VP`;
+  const summary = `${choice.group} (${SKILL_LABEL[choice.skill] ?? choice.skill}), ${line}: ${total} ${DEGREE_LABEL[degree]} → ${auto ? "" : "suggests "}${signed(vp)} VP`;
   state.pending[pcId] = {
     lap: state.lap, key, choiceId: choice.id, group: choice.group, skill: choice.skill, lineId: lineId ?? null, dc,
-    nat: roll.nat, mod: roll.mod, total, degree, vp, hold: ctx.hold, notes, summary, undo: change, target: ctx.target,
+    nat: roll.nat, mod: roll.mod, total, degree, vp: auto ? vp : 0, suggested: vp, auto, hold: ctx.hold, notes, summary, undo: change, target: ctx.target,
   };
   return { ok: true, pending: state.pending[pcId], parts: roll.parts ?? [] };
 }
 
 /** The Narrows: three checks, three different skills. rolls = [{ skill, nat, mod }, ...]. */
-export function applyNarrows(state, req, rolls) {
+export function applyNarrows(state, req, rolls, options = {}) {
+  const auto = options.autoVp !== false;
   const v = validatePcRequest(state, req);
   if (!v.ok) return v;
   if (v.choice.special !== "narrows") return { ok: false, error: "That isn't the Narrows." };
@@ -240,8 +242,8 @@ export function applyNarrows(state, req, rolls) {
   const change = { favor: 0, drake: 0, adj: {}, influence: { qiu: 0, hida: 0 }, bonusSet: 0, usedSkill: null, bonusSpent: 0, favorSpent: 0, shelteredPrev: !!state.sheltered[pcId] };
   if (req.spendFavor) { state.favor.party -= 1; state.favor.spent += 1; change.favor -= 1; change.favorSpent = 1; }
   state.sheltered[pcId] = !out;
-  const summary = `The Narrows: ${checks.map((c) => `${SKILL_LABEL[c.skill]} ${c.total} ${DEGREE_LABEL[c.degree]}`).join("; ")} → ${signed(vp)} VP`;
-  state.pending[pcId] = { lap: state.lap, key: "B", choiceId: v.choice.id, group: v.choice.group, skill: "narrows", lineId: null, dc: NARROWS_DC, checks, vp, hold: 0, notes, summary, undo: change, degree: out ? "failure" : "success" };
+  const summary = `The Narrows: ${checks.map((c) => `${SKILL_LABEL[c.skill]} ${c.total} ${DEGREE_LABEL[c.degree]}`).join("; ")} → ${auto ? "" : "suggests "}${signed(vp)} VP`;
+  state.pending[pcId] = { lap: state.lap, key: "B", choiceId: v.choice.id, group: v.choice.group, skill: "narrows", lineId: null, dc: NARROWS_DC, checks, vp: auto ? vp : 0, suggested: vp, auto, hold: 0, notes, summary, undo: change, degree: out ? "failure" : "success" };
   return { ok: true, pending: state.pending[pcId], checks };
 }
 
@@ -320,18 +322,20 @@ export function buildDcCardHtml(state, lap, key) {
     + `<button type="button" data-srt-action="roll" data-lap="${lap}" data-key="${key}"><i class="fa-solid fa-dice-d20"></i> Roll my check</button></div>`;
 }
 
-export function buildPcRollHtml({ pcName, choice, lineId, dc, nat, parts, total, degree, vp, notes }) {
+const vpLine = (vp, auto) => (auto ? `<b>${signed(vp)} VP</b>` : `<b>Suggested: ${signed(vp)} VP</b> <small>(the GM sets the VP)</small>`);
+
+export function buildPcRollHtml({ pcName, choice, lineId, dc, nat, parts, total, degree, vp, notes, auto = true }) {
   const col = DEGREE_COLOR[degree];
   const bonus = parts.map((p) => `${signed(p.value)} ${esc(p.label)}`).join(", ");
   const how = lineId ? `${LINES[lineId].label}, DC ${dc}` : `DC ${dc}`;
   return `<h4 style="margin:0 0 4px 0">${esc(pcName)}: ${esc(choice.group)} <small>(${esc(SKILL_LABEL[choice.skill] ?? choice.skill)})</small></h4>`
     + `<div>${esc(how)}</div><div>d20 ${nat} (${bonus}) = <b>${total}</b> <span style="color:${col};font-weight:bold">${DEGREE_LABEL[degree]}</span></div>`
-    + `<div><b>${signed(vp)} VP</b>${notes.length ? ` · ${notes.map(esc).join(" · ")}` : ""}</div>`;
+    + `<div>${vpLine(vp, auto)}${notes.length ? ` · ${notes.map(esc).join(" · ")}` : ""}</div>`;
 }
 
-export function buildNarrowsHtml({ pcName, checks, vp, notes }) {
+export function buildNarrowsHtml({ pcName, checks, vp, notes, auto = true }) {
   const rows = checks.map((c) => `<div>${esc(SKILL_LABEL[c.skill])}: d20 ${c.nat} ${signed(c.mod)} = <b>${c.total}</b> <span style="color:${DEGREE_COLOR[c.degree]};font-weight:bold">${DEGREE_LABEL[c.degree]}</span></div>`).join("");
-  return `<h4 style="margin:0 0 4px 0">${esc(pcName)}: The Narrows <small>(DC ${NARROWS_DC})</small></h4>${rows}<div><b>${signed(vp)} VP</b> · ${notes.map(esc).join(" · ")}</div>`;
+  return `<h4 style="margin:0 0 4px 0">${esc(pcName)}: The Narrows <small>(DC ${NARROWS_DC})</small></h4>${rows}<div>${vpLine(vp, auto)} · ${notes.map(esc).join(" · ")}</div>`;
 }
 
 /** The skill picker a player sees. `mods` maps skill -> that rider's modifier; `targets` is from eligibleTargets. */

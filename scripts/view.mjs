@@ -56,6 +56,9 @@ export function towerContext(state, { isGM = false, portraitFor = null, canRoll 
         sheltered: !!state.sheltered[r.id],
         rolledText: pend ? pend.summary : "",
         hasPending: !!pend,
+        showSuggest: !!pend && pend.auto === false,
+        suggested: pend?.suggested ?? 0,
+        suggestedText: pend ? `${(pend.suggested ?? 0) > 0 ? "+" : ""}${pend.suggested ?? 0} VP` : "",
       };
     }),
     adjustable: ROSTER.filter((r) => !r.pc).map((r) => ({

@@ -358,3 +358,9 @@ test("the field card shows the action and the target", () => {
   assert.match(html, /targets <b>Aji<\/b>/);
   assert.doesNotMatch(buildNpcDiceHtml(1, "D", [{ name: "Ivory", action: "Sprint", target: null, lineLabel: "Hold pace", skill: "nature", mod: 4, dc: 28, nat: 10, total: 14, degree: "failure" }]), /targets/);
 });
+
+test("the dialog markup has no <form>: Foundry wraps dialog content in its own form, and a nested one is dropped with its class", () => {
+  const html = buildDialogHtml(freshState(), "violet", sectionMenu(1, "A"), { mods: {}, targets: [], key: "A" });
+  assert.doesNotMatch(html, /<form/i);
+  assert.match(html, /^<div class="srt-dialog">/);
+});

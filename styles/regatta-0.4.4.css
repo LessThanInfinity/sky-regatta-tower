@@ -148,18 +148,19 @@
 .srt-dialog .srt-line .pay i { font-style: normal; opacity: 0.7; }
 .srt-dialog .srt-line .pay b { text-align: right; }
 
-/* the approach rows: skill on the left, what it does on the right */
-.srt-dialog .srt-opts { display: flex; flex-direction: column; gap: 5px; }
-.srt-dialog .srt-opt .card { display: grid; grid-template-columns: 9.5rem 1fr; gap: 10px; padding: 6px 10px; align-items: center; background: rgba(128, 128, 140, 0.08); }
-.srt-dialog .srt-opt .left { display: flex; flex-direction: column; gap: 2px; }
-.srt-dialog .srt-opt .skill { font-weight: 700; font-size: 1rem; display: flex; align-items: baseline; gap: 6px; }
-.srt-dialog .srt-opt .mod { font-size: 0.8rem; font-weight: 700; color: #3ddc84; }
+/* the approaches: a two-column grid of tiles, skill and modifier on top, what it does underneath */
+.srt-dialog .srt-opts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.srt-dialog .srt-opt .card { display: flex; flex-direction: column; gap: 3px; padding: 7px 10px; height: 100%; box-sizing: border-box; background: rgba(128, 128, 140, 0.10); }
+.srt-dialog .srt-opt .left { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+.srt-dialog .srt-opt .skill { font-weight: 700; font-size: 1.05rem; display: flex; align-items: baseline; gap: 6px; }
+.srt-dialog .srt-opt .mod { font-size: 0.85rem; font-weight: 700; color: #3ddc84; }
 .srt-dialog .srt-opt .usedtag { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.8; }
-.srt-dialog .srt-opt .pill { font-size: 0.66rem; padding: 0 6px; border-radius: 3px; align-self: flex-start; background: rgba(0, 0, 0, 0.3); }
+.srt-dialog .srt-opt .pill { font-size: 0.66rem; padding: 0 6px; border-radius: 3px; background: rgba(0, 0, 0, 0.3); }
 .srt-dialog .srt-opt .pill.safe { color: #3ddc84; } .srt-dialog .srt-opt .pill.standard { color: #ffc107; } .srt-dialog .srt-opt .pill.risky { color: #ff7a7a; }
-.srt-dialog .srt-opt .right { display: flex; flex-direction: column; gap: 1px; font-size: 0.78rem; line-height: 1.25; }
-.srt-dialog .srt-opt .right b { font-size: 0.8rem; opacity: 0.95; }
-.srt-dialog .srt-opt .right span { opacity: 0.75; }
+.srt-dialog .srt-opt .right { display: flex; flex-direction: column; gap: 1px; font-size: 0.76rem; line-height: 1.25; }
+.srt-dialog .srt-opt .right b { font-size: 0.8rem; color: #ffd37a; }
+.srt-dialog .srt-opt .right span { opacity: 0.8; }
+.srt-dialog .srt-opts .srt-narrows { grid-column: 1 / -1; }
 .srt-dialog .srt-narrows { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -1px 0 2px 10px; font-size: 0.78rem; }
 .srt-dialog .srt-narrows .chip { cursor: pointer; }
 .srt-dialog .srt-narrows .chip input { position: absolute; opacity: 0; pointer-events: none; }

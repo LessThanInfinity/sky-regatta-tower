@@ -447,5 +447,5 @@ export function buildDialogHtml(state, pcId, menu, { mods = {}, targets = [], ke
     + `<label class="spend"><input type="checkbox" name="spendFavor" ${favor < 1 || left < 1 ? "disabled" : ""}> Spend 1 Favor for +1 <small>(party has ${favor}; ${Math.max(0, left)} left this lap)</small></label>`
     + `<span class="srt-note">The party's +2 is added automatically.${drakeNote}</span></div>`;
 
-  return `<form class="srt-dialog"><p class="srt-intro">${esc(menu.intro)}</p>${lineHtml}${approachHtml}${targetHtml}${helpHtml}</form>`;
+  return `<div class="srt-dialog"><p class="srt-intro">${esc(menu.intro)}</p>${lineHtml}${approachHtml}${targetHtml}${helpHtml}</div>`;
 }

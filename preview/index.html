@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sky Regatta Standings: preview</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../styles/tower.css">
+<style>
+  body { margin: 0; background: #2a2a2e; font-family: system-ui, sans-serif; color: #ddd; }
+  .stage { display: flex; gap: 24px; padding: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .win { width: 420px; border: 1px solid #000; box-shadow: 0 4px 16px #000a; }
+  .win-title { background: #111; padding: 6px 10px; font-size: 13px; color: #ccc; }
+  .window-content { display: block; }
+  .note { max-width: 320px; font-size: 13px; line-height: 1.4; }
+  #warn { color: #ff8a8a; font-size: 13px; min-height: 1.2em; margin-top: 6px; }
+  button, input { font: inherit; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div>
+    <div class="win sky-regatta"><div class="win-title">Sky Regatta (GM view)</div><div class="window-content" id="gm"></div></div>
+    <div id="warn"></div>
+  </div>
+  <div>
+    <div class="win sky-regatta"><div class="win-title">Sky Regatta (player view)</div><div class="window-content" id="player"></div></div>
+  </div>
+  <div class="note">
+    Preview harness: the same template, CSS, view helpers and rules engine as the module, with Foundry's chrome faked.
+    Use the GM controls on the left; the right window shows what players see.
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/handlebars.js/4.7.8/handlebars.min.js"></script>
+<script type="module">
+import { freshState, resolveSection, undo } from "../scripts/engine.mjs";
+import { towerContext, validateInput, readoutFor } from "../scripts/view.mjs";
+
+const tpl = Handlebars.compile(await (await fetch("../templates/tower.hbs")).text());
+let state = freshState();
+const d6 = async () => 1 + Math.floor(Math.random() * 6);
+const gm = document.getElementById("gm");
+const unlocked = () => !!gm.querySelector("input[name='unlock']")?.checked;
+
+function render() {
+  gm.innerHTML = tpl(towerContext(state, { isGM: true }));
+  document.getElementById("player").innerHTML = tpl(towerContext(state, { isGM: false }));
+  for (const input of gm.querySelectorAll("input[data-kind='pc']")) input.addEventListener("input", () => updateHint(input));
+}
+function updateHint(input) {
+  const { total, ok } = readoutFor(Number(input.dataset.base), input.value, Number(input.dataset.min), Number(input.dataset.max));
+  gm.querySelector(`[data-total-for="${input.dataset.id}"]`).textContent = total;
+  gm.querySelector(`[data-pc="${input.dataset.id}"]`).classList.toggle("bad", !ok);
+  gm.querySelector(`[data-hint-for="${input.dataset.id}"]`).classList.toggle("bad", !ok);
+}
+gm.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("button[data-action]");
+  if (!btn) return;
+  const action = btn.dataset.action;
+  document.getElementById("warn").textContent = "";
+  if (action === "step") {
+    const input = gm.querySelector(`input[name="${btn.dataset.for}"]`);
+    let v = (Number(input.value) || 0) + Number(btn.dataset.dir);
+    if (!unlocked()) v = Math.min(Number(input.dataset.max), Math.max(Number(input.dataset.min), v));
+    input.value = v; input.dispatchEvent(new Event("input", { bubbles: true }));
+    return;
+  }
+  if (action === "roll") {
+    const input = {};
+    for (const el of gm.querySelectorAll(".srt-controls input[name]")) {
+      if (el.name === "unlock") continue;
+      if (el.name.startsWith("gain_")) { input[el.dataset.id] = Number(el.dataset.base) + (Number(el.value) || 0); continue; }
+      input[el.name] = el.type === "checkbox" ? el.checked : (el.value === "" ? undefined : Number(el.value));
+    }
+    const problem = validateInput(state, input, unlocked());
+    if (problem) { document.getElementById("warn").textContent = problem; return; }
+    await resolveSection(state, input, d6);
+  } else if (action === "undo") { const p = undo(state); if (p) state = p; }
+  else if (action === "reset") { state = freshState(); }
+  render();
+});
+window.__state = () => state;
+window.__demo = async (n) => { // fast-forward n sections with plausible PC totals
+  for (let i = 0; i < n; i++) {
+    const input = { violet: state.vp.violet + Math.floor(Math.random() * 4), aji: state.vp.aji + Math.floor(Math.random() * 4) };
+    await resolveSection(state, input, d6);
+  }
+  render();
+};
+render();
+</script>
+</body>
+</html>

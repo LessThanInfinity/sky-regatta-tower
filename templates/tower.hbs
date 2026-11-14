@@ -1,0 +1,81 @@
+<section class="srt">
+  <header class="srt-head">
+    <div class="srt-badge">SKY REGATTA</div>
+    <div class="srt-lap">{{lapLabel}}</div>
+    <div class="srt-sub">{{subtitle}}</div>
+  </header>
+
+  <ol class="srt-rows">
+    <li class="srt-row srt-cols-head">
+      <span class="pos"></span><span class="tag"></span><span class="name"></span>
+      <span class="delta">THIS</span><span class="total">VP</span><span class="move"></span><span class="gap">GAP</span>
+    </li>
+    {{#each rows}}
+    <li class="srt-row {{#if isLeader}}leader{{/if}} {{#if pc}}pc{{/if}} {{rowClass}}">
+      <span class="pos">{{rank}}</span>
+      <span class="tag" style="--team: {{color}}">{{code}}</span>
+      <span class="name">
+        {{#if portrait}}<img class="portrait" src="{{portrait}}" alt="">{{/if}}
+        {{name}}
+      </span>
+      <span class="delta {{deltaClass}}">{{deltaText}}</span>
+      <span class="total">{{total}}</span>
+      <span class="move {{moveClass}}">{{moveText}}</span>
+      <span class="gap {{#if isLeader}}lead{{/if}}">{{gapText}}</span>
+    </li>
+    {{/each}}
+  </ol>
+
+  {{#if isGM}}
+  <footer class="srt-controls">
+    <div class="srt-next">Next: <b>{{nextLabel}}</b></div>
+    {{#unless finished}}
+    <div class="srt-pcs">
+      {{#each pcs}}
+      <div class="srt-field srt-pc" data-pc="{{id}}">
+        <span class="srt-label">{{name}} <i>(now {{base}} VP)</i></span>
+        <span class="srt-pcrow">
+          <span class="srt-step">
+            <button type="button" class="srt-step-btn" data-action="step" data-dir="-1" data-for="gain_{{id}}" tabindex="-1">-</button>
+            <input type="number" name="gain_{{id}}" value="0" data-id="{{id}}" data-base="{{base}}" data-min="{{min}}" data-max="{{max}}" min="{{min}}" max="{{max}}" data-kind="pc">
+            <button type="button" class="srt-step-btn" data-action="step" data-dir="1" data-for="gain_{{id}}" tabindex="-1">+</button>
+          </span>
+          <span class="srt-equals">adding</span>
+          <span class="srt-newtotal">= <b data-total-for="{{id}}">{{base}}</b> VP</span>
+        </span>
+        <span class="srt-hint" data-hint-for="{{id}}">allowed {{min}} to {{max}} this section</span>
+      </div>
+      {{/each}}
+    </div>
+    {{#if showShelter}}
+    <div class="srt-shelter">
+      {{#each pcs}}
+      <label><input type="checkbox" name="{{id}}Sheltered" {{#if sheltered}}checked{{/if}}> {{name}} sheltered (Narrows)</label>
+      {{/each}}
+    </div>
+    {{/if}}
+    <details class="srt-adj">
+      <summary>NPC adjustments (for example -1 if a PC bumped them)</summary>
+      <div class="srt-adj-grid">
+        {{#each adjustable}}
+        <div class="srt-field">
+          <span class="srt-label">{{name}}</span>
+          <span class="srt-step">
+            <button type="button" class="srt-step-btn" data-action="step" data-dir="-1" data-for="adj_{{id}}" tabindex="-1">-</button>
+            <input type="number" name="adj_{{id}}" value="0" data-base="0" data-min="{{min}}" data-max="{{max}}" min="{{min}}" max="{{max}}" data-kind="adj">
+            <button type="button" class="srt-step-btn" data-action="step" data-dir="1" data-for="adj_{{id}}" tabindex="-1">+</button>
+          </span>
+        </div>
+        {{/each}}
+      </div>
+    </details>
+    <label class="srt-unlock"><input type="checkbox" name="unlock"> Unlock limits (allowed this section: {{limitText}})</label>
+    {{/unless}}
+    <div class="srt-buttons">
+      {{#unless finished}}<button type="button" class="srt-go" data-action="roll"><i class="fa-solid fa-dice"></i> Roll next section</button>{{/unless}}
+      <button type="button" data-action="undo"><i class="fa-solid fa-rotate-left"></i> Undo</button>
+      <button type="button" data-action="reset"><i class="fa-solid fa-trash"></i> Reset</button>
+    </div>
+  </footer>
+  {{/if}}
+</section>

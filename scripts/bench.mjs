@@ -4,21 +4,21 @@
  * state.bench so the riders' rolls (and the next resolveSection) pick it up.
  */
 import { ROSTER, BENCH, normalizeState, signed, esc } from "./engine.mjs";
-import { degreeOf, SKILL_LABEL, DEGREE_LABEL, drakeName, DRAKE_MIN, PARTY_BONUS, RULES, cardHead, degPill, sectionTitle } from "./rolls.mjs";
+import { degreeOf, SKILL_LABEL, DEGREE_LABEL, drakeName, DRAKE_MIN, PARTY_BONUS, RULES, outcomeHtml, cardHead, degPill, sectionTitle } from "./rolls.mjs";
 
 export const PIT_COST = -1;                    // VP a rider pays to box
 
 /** What a bench member can do. `before`: has to happen before the rider rolls. */
 export const BENCH_ACTIONS = [
   { id: "spotter", name: "Spotter", skills: ["perception"], dc: 28, target: true, before: true, in: "ABD",
-    desc: "Read the gaps for your rider. Success: +1 circumstance on their roll this section. Crit: +2." },
+    desc: "Read the gaps for your rider. Success: +1 circumstance on their roll this section. Crit: +2 circumstance instead." },
   { id: "pit", name: "Pit crew", skills: ["nature", "medicine", "crafting"], dc: 30, target: true, in: "ABCD",
-    desc: `Box your rider: they pay ${PIT_COST} VP. Success: the drake climbs a rung (up to Surging). Crit: two rungs. Crit failure: it drops a rung. Once per rider per lap.` },
+    desc: `Box your rider: they pay ${PIT_COST} VP. Success: the drake climbs a rung (up to Surging). Crit: the drake climbs two rungs. Crit failure: the drake drops a rung. Once per rider per lap.` },
   { id: "fix", name: "Fix it", skills: ["nature", "diplomacy"], dc: 30, target: true, before: true, in: "ABD",
-    desc: "Calm the drake and settle your rider. Success: their drake's penalty is ignored this section and one Narrows strike is cancelled. Crit: their last used skill can be used again this lap." },
+    desc: "Calm the drake and settle your rider. Success: their drake's penalty is ignored this section, and one Narrows strike is cancelled. Crit: also, their last used skill can be used again this lap." },
   // Battle: the bench is on the ground, so it can only watch and shout
   { id: "call", name: "Call the attack", skills: ["perception"], dc: 28, target: true, in: "C",
-    desc: "Shout a warning as a rival lines up your rider. Success: one NPC attack on them is cancelled. Crit: also 1 Favor. Stacks with nothing: one cancel per attack." },
+    desc: "Shout a warning as a rival lines up your rider. Success: one NPC attack on them is cancelled. Crit: also +1 Favor. One cancel per attack; it doesn't stack with Hold the line." },
   { id: "crowd", name: "Work the crowd", skills: ["performance"], dc: 28, target: false, in: "C",
     desc: "Rile up the stands. Success: the party gains 1 Favor. Crit: 2 Favor. (No VP.)" },
   // switched on with the "extra bench actions" setting
@@ -166,7 +166,7 @@ export function buildBenchDialogHtml(state, benchId, { mods = {}, locked = null 
     const skills = a.skills.map((s) => `${SKILL_LABEL[s]}${mods[s] === undefined ? "" : ` ${signed(benchMod(mods[s]))}`}`).join(" / ");
     return `<label class="srt-pick srt-opt${dim ? " off" : ""}"><input type="radio" name="action" value="${a.id}" ${picked === a.id ? "checked" : ""} ${locked ? "disabled" : ""}>`
       + `<span class="card"><span class="left"><span class="skill">${esc(a.name)}</span><span class="pill standard">DC ${a.dc}</span></span>`
-      + `<span class="right"><b>${esc(skills)}</b><span>${esc(a.desc)}</span></span></span></label>`;
+      + `<span class="right"><b>${esc(skills)}</b>${outcomeHtml(a.desc)}</span></span></label>`;
   };
   const riderCard = (r) => {
     const rung = state.drake[r.id] ?? 0;

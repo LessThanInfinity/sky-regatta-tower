@@ -8,6 +8,33 @@ export const PARTY_BONUS = 2;      // untyped bonus the party carries into every
 export const BATTLE_DC = 30;
 export const NARROWS_DC = 30;
 export const MAX_FAVOR_SPEND_PER_LAP = 2;
+/** Splits "Lead. Success: x. Crit: y. Crit failure: z. Note." into a lead line, outcome rows and trailing notes. */
+const OUT_KIND = { "Critical failure": "critfail", "Crit failure": "critfail", Crit: "crit", Success: "success", Failure: "fail" };
+const OUT_LABEL = { crit: "Crit success", success: "Success", fail: "Failure", critfail: "Crit fail" };
+const OUT_ORDER = ["crit", "success", "fail", "critfail"];   // always shown best to worst
+export function parseOutcomes(desc) {
+  const marks = [...String(desc).matchAll(/(Critical failure|Crit failure|Crit|Success|Failure)\s*:\s*/g)];
+  if (!marks.length) return { lead: String(desc), rows: [], notes: [] };
+  const lead = desc.slice(0, marks[0].index).trim();
+  const rows = [], notes = [];
+  marks.forEach((m, i) => {
+    const end = i + 1 < marks.length ? marks[i + 1].index : desc.length;
+    let t = desc.slice(m.index + m[0].length, end).trim();
+    const cut = t.search(/\.\s+(?=[A-Z])/);
+    if (cut >= 0) { notes.push(t.slice(cut + 1).trim()); t = t.slice(0, cut + 1); }
+    rows.push({ kind: OUT_KIND[m[1]], text: t.replace(/\.$/, "") });
+  });
+  rows.sort((a, b) => OUT_ORDER.indexOf(a.kind) - OUT_ORDER.indexOf(b.kind));
+  return { lead, rows, notes };
+}
+/** The description as a lead line, then one colour-coded row per outcome. */
+export function outcomeHtml(desc) {
+  const { lead, rows, notes } = parseOutcomes(desc);
+  return `<span class="outs">${lead ? `<span class="lead">${esc(lead)}</span>` : ""}`
+    + rows.map((r) => `<span class="out ${r.kind}"><i>${OUT_LABEL[r.kind]}</i><em>${esc(r.text)}</em></span>`).join("")
+    + notes.map((n) => `<span class="onote">${esc(n)}</span>`).join("") + `</span>`;
+}
+
 /** Optional rules the GM can switch on in the module settings (main.mjs keeps this in step with them). */
 export const RULES = { burn: false, benchExtras: false };
 
@@ -500,7 +527,7 @@ export function buildDialogHtml(state, pcId, menu, { mods = {}, targets = [], ke
     const left = isUsed ? `<span class="skill"><s>${esc(SKILL_LABEL[c.skill])}</s></span><span class="usedtag">used this lap</span>` : `<span class="skill">${esc(SKILL_LABEL[c.skill])}${modHtml}<span class="star" title="A skill your sponsor favors">&#9733;</span></span>${pill}`;
     const favCls = c.sponsored ? SPONSORS.filter((x) => x.favors.includes(c.skill)).map((x) => ` fav-${x.id}`).join("") : "";
     return `<label class="srt-pick srt-opt${dim ? " off" : ""}${favCls}"><input type="radio" name="choice" value="${c.id}" ${L0 && L0.choiceId === c.id ? "checked" : ""} ${dim || L0 ? "disabled" : ""}>`
-      + `<span class="card"><span class="left">${left}</span><span class="right"><b>${esc(c.group)}</b><span>${esc(c.desc)}</span></span></span></label>`;
+      + `<span class="card"><span class="left">${left}</span><span class="right"><b>${esc(c.group)}</b>${outcomeHtml(c.desc)}</span></span></label>`;
   };
   const tiles = (list) => `<div class="srt-opts">${list.map(tile).join("")}</div>`;
 

@@ -487,3 +487,14 @@ test("a Hero Point reroll keeps the sponsor", () => {
   assert.equal(s.pending.violet.sponsor, "qiu");
   assert.equal(s.pending.violet.heroUsed, true);
 });
+
+test("option descriptions split into a lead, colour-coded outcome rows and trailing notes", async () => {
+  const { parseOutcomes, outcomeHtml } = await import("../scripts/rolls.mjs");
+  const o = parseOutcomes("Rile up the crowd! Success: +1 VP and 1 Favor. Crit: +2 VP and 2 Favor. No line needed.");
+  assert.equal(o.lead, "Rile up the crowd!");
+  assert.deepEqual(o.rows.map((r) => r.kind), ["crit", "success"]);   // best first, whatever order the text had
+  assert.deepEqual(o.notes, ["No line needed."]);
+  const p = parseOutcomes("Success: one rival loses 1 VP. Crit failure: you lose 1 Favor.");
+  assert.deepEqual(p.rows.map((r) => [r.kind, r.text]), [["success", "one rival loses 1 VP"], ["critfail", "you lose 1 Favor"]]);
+  assert.match(outcomeHtml("Plain text only."), /class="lead">Plain text only\./);
+});

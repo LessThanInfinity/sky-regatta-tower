@@ -277,3 +277,20 @@
 .srt-card .srt-card-btn2 { background: #12456b; border-color: #2f8fd0; margin-top: 4px; }
 .srt-card .srt-card-btn2:hover { background: #1a5d8e; }
 .sky-regatta .srt-benchbtn { background: #12456b; border-color: #2f8fd0; margin-top: 6px; }
+
+/* outcome rows: a lead line, then one colour-coded row per result */
+.srt-dialog .srt-opt .right .outs { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; }
+.srt-dialog .srt-opt .right .outs span, .srt-dialog .srt-opt .right .outs i, .srt-dialog .srt-opt .right .outs em { opacity: 1; }
+.srt-dialog .outs .lead { font-size: 0.82rem; font-style: italic; opacity: 0.85 !important; line-height: 1.25; }
+.srt-dialog .outs .out { display: grid; grid-template-columns: 6.2em 1fr; gap: 6px; align-items: baseline; font-size: 0.84rem; line-height: 1.25; }
+.srt-dialog .outs .out i { font-style: normal; font-weight: 700; font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.04em; text-align: center; padding: 1px 4px; border-radius: 3px; color: #10131a; }
+.srt-dialog .outs .out em { font-style: normal; }
+.srt-dialog .outs .out.crit i { background: #12e660; box-shadow: 0 0 6px rgba(18, 230, 96, 0.55); }
+.srt-dialog .outs .out.success i { background: #7fc98a; }
+.srt-dialog .outs .out.fail i { background: #ffd23f; }
+.srt-dialog .outs .out.critfail i { background: #ff5c5c; }
+.srt-dialog .outs .onote { font-size: 0.76rem; opacity: 0.7 !important; }
+.srt-dialog.srt-bench .srt-opts { grid-template-columns: 1fr; }
+.srt-dialog.srt-bench .srt-opt .left .skill { font-size: 1.1rem; }
+.srt-dialog.srt-bench .srt-opt .right > b { font-size: 0.86rem; }
+.srt-dialog.srt-bench .outs .out { font-size: 0.88rem; }

@@ -52,7 +52,7 @@ const ENTRY = [
   mk("Hold the line", "acrobatics", "Crit: +1 circumstance bonus on your Obstacle roll.", { fx: { critSuccess: { bonusNext: 1 } } }),
   mk("Muscle through", "athletics", "Success: one rival loses 1 VP. Crit failure: your drake drops a rung.", { target: true, fx: { ...RIVAL, critFailure: { drake: 1 } } }),
   mk("Read the wind", "survival", "Crit: you learn the Obstacle's best lane.", { fx: { critSuccess: { note: "You read the wind: the GM tells you the Obstacle's best lane." } } }),
-  mk("Flair", "performance", "Rile up the crowd! Success: 1 Favor instead of VP (crit: 2). No line needed.", { noLine: true, noVp: true, fx: { success: { favor: 1 }, critSuccess: { favor: 2 } } }),
+  mk("Flair", "performance", "Rile up the crowd! Success: +1 VP and 1 Favor. Crit: +2 VP and 2 Favor. No line needed.", { noLine: true, flatVp: [1, 2], fx: { success: { favor: 1 }, critSuccess: { favor: 2 } } }),
   mk("Psych out", "deception", "Success: one rival loses 1 VP. Crit failure: you lose 1 Favor.", { target: true, fx: { ...RIVAL, critFailure: { favor: -1 } } }),
   mk("Psych out", "intimidation", "Success: one rival loses 1 VP. Crit failure: you lose 1 Favor.", { target: true, fx: { ...RIVAL, critFailure: { favor: -1 } } }),
 ];
@@ -208,7 +208,7 @@ export function applyPcCheck(state, req, roll, options = {}) {
   const change = { favor: 0, drake: 0, adj: {}, influence: { qiu: 0, hida: 0 }, bonusSet: 0, usedSkill: null, bonusSpent: 0, favorSpent: 0, sheltered: undefined };
   const ctx = { drake: 0, self: 0, hold: 0, target: req.target || null };
 
-  let vp = choice.noVp || choice.battle ? 0 : lineVp(lineId, degree);
+  let vp = choice.battle ? 0 : choice.flatVp ? (degree === "critSuccess" ? choice.flatVp[1] : degree === "success" ? choice.flatVp[0] : 0) : lineVp(lineId, degree);
   if (lineId === "risky" && (degree === "failure" || degree === "critFailure")) ctx.drake = Math.max(ctx.drake, 1);
   applyEffect(state, pcId, choice.fx[degree], ctx, change, notes);
   let sponsorFavored = false;

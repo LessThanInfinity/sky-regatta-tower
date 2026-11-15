@@ -579,8 +579,8 @@ Hooks.once("init", () => {
   });
   game.settings.register(MODULE_ID, "npcBench", {
     name: "NPC bench strength",
-    hint: "Each NPC rider's team has a bench too: this is the chance, each lap, that it gives them +1 on the lap roll. 0.5 keeps the party around 20 to 35 percent depending on how well they use their own bench.",
-    scope: "world", config: true, type: Number, default: 0.5, range: { min: 0, max: 1, step: 0.05 },
+    hint: "Each NPC rider's team has a bench too: this is the chance, each lap, that it gives them +1 on the lap roll. 0.2 (default) keeps the party around 27 percent if they only spot and about 40 percent if they go All-out and use pit stops; 0.5 is much tougher.",
+    scope: "world", config: true, type: Number, default: 0.2, range: { min: 0, max: 1, step: 0.05 },
   });
   game.settings.register(MODULE_ID, "npcFouls", {
     name: "NPC fouls",

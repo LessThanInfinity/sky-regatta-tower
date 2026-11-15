@@ -33,7 +33,7 @@ The rules live in `scripts/engine.mjs` (pure JavaScript, unit tested). The rider
   - **Crowd** (Performance DC 28): +1 party Favor, +2 on a crit.
   - **Coach** (Diplomacy DC 30): the rider's last used skill (last two on a crit) can be used again this lap.
   - The GM can **clear** a bench action from the controls.
-- **NPC benches:** each NPC rider's team has a bench too. Each lap there is a chance (world setting *NPC bench strength*, default 0.5) that the NPC's lap roll gets +1; the GM report notes it. In simulations this leaves the party at roughly 20 percent if they only spot and 30 to 35 percent if they go All-out and use pit stops.
+- **NPC benches:** each NPC rider's team has a bench too. Each lap there is a chance (world setting *NPC bench strength*, default 0.2) that the NPC's lap roll gets +1; the GM report notes it. In simulations this leaves the party at roughly 27 percent if they only spot and about 40 percent if they go All-out and use pit stops.
 - **Surging:** the drake ladder now has one rung above Fresh. A Surging drake gives +1 circumstance (it doesn't stack with bench help) and lasts until the end of the lap. A pit crit or a crit on Command the drake gets there.
 - **Burn the drake:** a rider with a Fresh or Surging drake can take +2 on a roll and drop the drake a rung (not in the Narrows).
 - **GM tweaks:** drake rung and party Favor steppers for pit actions and rulings.

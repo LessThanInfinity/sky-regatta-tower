@@ -76,14 +76,15 @@ test("Risky needs a drake that isn't Strained, and a failure on Risky drops a ru
   assert.equal(t.drake.violet, 1);
 });
 
-test("Flair earns Favor instead of VP", () => {
+test("Flair earns Favor and a little VP: +1 VP and 1 Favor on a success, +2 and 2 on a crit", () => {
   const s = freshState();
   const r = applyPcCheck(s, req({ choiceId: "flair:performance", lineId: undefined }), roll(15, 20));      // 35 vs 30
-  assert.equal(r.pending.vp, 0);
+  assert.equal(r.pending.vp, 1);
   assert.equal(s.favor.party, 1);
   const t = freshState();
   applyPcCheck(t, req({ choiceId: "flair:performance" }), roll(20, 20));                                    // nat 20 success -> crit
   assert.equal(t.favor.party, 2);
+  assert.equal(t.pending.violet.vp, 2);
 });
 
 test("a rival effect queues a VP loss for that NPC and clearing the roll removes it", () => {
@@ -170,10 +171,10 @@ test("the Narrows: three different skills, strikes and shelter", () => {
 test("the section roll uses the PCs' pending rolls and clears them; used skills reset on a new lap", async () => {
   const s = freshState();
   applyPcCheck(s, req({ choiceId: "command-the-drake:nature" }), roll(15, 20));    // +2 VP
-  applyPcCheck(s, { pcId: "aji", choiceId: "flair:performance" }, roll(15, 20));   // Favor, 0 VP
+  applyPcCheck(s, { pcId: "aji", choiceId: "flair:performance" }, roll(15, 20));   // Favor and 1 VP
   await resolveSection(s, {}, d6);                                                  // no totals typed: use the rolls
   assert.equal(s.vp.violet, 2);
-  assert.equal(s.vp.aji, 0);
+  assert.equal(s.vp.aji, 1);
   assert.deepEqual(s.pending, {});
   assert.deepEqual(s.used.violet, ["nature"]);                                      // same lap, still used
   for (let i = 0; i < 3; i++) await resolveSection(s, {}, d6);                      // finish the lap

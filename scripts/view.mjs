@@ -2,7 +2,7 @@
  * View helpers shared by the Foundry window and the browser preview. Pure JavaScript.
  */
 import {
-  ROSTER, GAP_CAP, SECTION_NAME, OBSTACLE, sectionNumber,
+  ROSTER, BENCH, GAP_CAP, SECTION_NAME, OBSTACLE, sectionNumber,
   standings, nextSection, isFinished, signed, sectionLimits, ADJ_LIMITS,
   normalizeState,
 } from "./engine.mjs";
@@ -73,6 +73,7 @@ export function towerContext(state, { isGM = false, portraitFor = null, canRoll 
     adjOpen: Object.values(state.pendingAdj).some((v) => v),
     canRoll,
     canBench,
+    benchWaiting: BENCH.filter((b) => !state.bench?.acts?.[b.id]).map((b) => b.name.split(/[ ,]/)[0]).join(" and "),
     benchActs: Object.values(state.bench?.acts ?? {}).map((a) => ({ id: a.benchId, who: a.benchName, text: `${benchAction(a.action).name}${a.rider ? ` for ${ROSTER.find((r) => r.id === a.rider)?.name}` : ""}`, degree: DEGREE_LABEL[a.degree], degreeClass: a.degree, notes: a.notes.join(" · ") })),
     // shown to everyone at the bottom of the tower
     riders: ROSTER.filter((r) => r.pc).map((r) => ({
@@ -83,7 +84,7 @@ export function towerContext(state, { isGM = false, portraitFor = null, canRoll 
       drakeRung: state.drake[r.id] ?? 0,
       drakeClass: (state.drake[r.id] ?? 0) < 0 ? "dS" : `d${state.drake[r.id] ?? 0}`,
       pit: pitOf(r.id) < 0,
-      benchHelp: (() => { const h = state.bench?.help?.[r.id]; if (!h) return ""; const bits = []; if (h.bonus) bits.push(`+${h.bonus}`); if (h.ignoreDrake) bits.push("calm drake"); return bits.join(", "); })(),
+      benchHelp: (() => { const h = state.bench?.help?.[r.id]; if (!h) return ""; const bits = []; if (h.bonus) bits.push(`+${h.bonus}`); if (h.ignoreDrake) bits.push("calm drake"); if (h.cancelAttack) bits.push("attack called"); return bits.join(", "); })(),
       rolled: !!state.pending[r.id],
       rolledLabel: rolledLabel(state.pending[r.id]),
       rolledClass: state.pending[r.id]?.degree ?? "",

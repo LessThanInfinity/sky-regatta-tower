@@ -116,6 +116,7 @@
           <button type="button" class="srt-step-btn" data-action="favor" data-dir="1">+</button></div>
       </div>
     </details>
+    {{#if benchWaiting}}<div class="srt-bench-status">Bench not yet acted: {{benchWaiting}}</div>{{/if}}
     {{#if benchActs.length}}
     <div class="srt-bench-status">Bench actions: {{#each benchActs}}<span>{{who}} <button type="button" class="srt-link" data-action="clearBench" data-bench="{{id}}">clear</button></span> {{/each}}</div>
     {{/if}}

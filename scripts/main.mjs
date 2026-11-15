@@ -584,8 +584,8 @@ Hooks.once("init", () => {
     scope: "world", config: true, type: Boolean, default: false, onChange: applyRules,
   });
   game.settings.register(MODULE_ID, "benchExtras", {
-    name: "Extra bench actions (Scout, Crowd)",
-    hint: "Off (default): the bench has Spotter, Pit crew and Fix it. On: Scout and Crowd are available too.",
+    name: "Extra bench actions (Scout)",
+    hint: "Off (default): the bench has Spotter, Pit crew and Fix it, and in Battle Call the attack and Work the crowd. On: Scout is available too.",
     scope: "world", config: true, type: Boolean, default: false, onChange: applyRules,
   });
   game.settings.register(MODULE_ID, "npcBench", {

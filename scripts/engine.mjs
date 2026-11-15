@@ -125,6 +125,7 @@ export async function resolveSection(state, input, d6, opts = {}) {
 
   // What each PC rolled this section (for the GM report) and any Hold the line they declared.
   const hold = Object.fromEntries(PCS.map((p) => [p.id, state.pending[p.id]?.hold ?? 0]));
+  const called = Object.fromEntries(PCS.map((p) => [p.id, !!state.bench.help?.[p.id]?.cancelAttack]));   // a bench member's warning
   for (const p of PCS) {
     const pr = state.pending[p.id];
     if (pr) extra.push(`<b>${esc(p.name)}</b> rolled: ${esc(pr.summary ?? "")}`);
@@ -225,6 +226,9 @@ export async function resolveSection(state, input, d6, opts = {}) {
           line += ` (${tgt.name} held the line: the attack is cancelled)`;
           if (hold[tgt.id] === 2) { pending[e.r.id] = (pending[e.r.id] || 0) - 1; line += `; their crit bumps ${e.r.name}: -1 VP`; }
           hold[tgt.id] = 0;                          // one attack cancelled per Hold the line
+        } else if (tgt.pc && called[tgt.id]) {
+          line += ` (the bench called it: the attack on ${tgt.name} is cancelled)`;
+          called[tgt.id] = false;                    // one cancel per warning
         } else if (tgt.pc) {
           pending[tgt.id] = (pending[tgt.id] || 0) - 1; pcHits.push(tgt); line += ` (${tgt.name} -1 VP)`;
         } else { pending[tgt.id] = (pending[tgt.id] || 0) - 1; notes[tgt.id].push(`Hit by ${e.r.name}: -1 VP`); line += " (-1 VP)"; }
@@ -233,7 +237,7 @@ export async function resolveSection(state, input, d6, opts = {}) {
       notes[e.r.id].push(line);
     }
     for (const [id, d] of Object.entries(pending)) state.vp[id] += d;
-    for (const p of pcHits) extra.push(`<b>${esc(p.name)}</b> was hit: -1 VP applied (they didn't Hold the line). If their Spotter cancels it (Perception DC 30), give the point back with the PC stepper.`);
+    for (const p of pcHits) extra.push(`<b>${esc(p.name)}</b> was hit: -1 VP applied (no Hold the line, no warning from the bench).`);
     if (!attackers.length) extra.push("No NPC attacked this lap.");
     if (lap === 4) extra.push("Final Battle: no shelter.");
     for (const n of NPCS) if (!notes[n.id].length) notes[n.id].push("Holds position (no attack)");

@@ -26,7 +26,7 @@ test("a Spotter success is +1 and a crit +2 circumstance, and the best circumsta
 test("one bench action per member per section; help must come before the rider rolls", () => {
   const s = freshState();
   assert.ok(act(s, {}).ok);
-  assert.equal(validateBenchRequest(s, { benchId: "reta", action: "crowd" }).ok, false, "Reta already acted");
+  assert.equal(validateBenchRequest(s, { benchId: "reta", action: "fix", rider: "violet", skill: "nature" }).ok, false, "Reta already acted");
   assert.equal(validateBenchRequest(s, { benchId: "rowan", action: "spotter", rider: "aji" }).ok, true, "Rowan still can");
   applyPcCheck(s, { pcId: "aji", choiceId: "muscle-through:athletics", lineId: "standard" }, roll(15, 20));
   assert.equal(validateBenchRequest(s, { benchId: "rowan", action: "spotter", rider: "aji" }).ok, false, "Aji already rolled");
@@ -88,24 +88,48 @@ test("Fix it: the penalty is ignored and a Narrows strike is cancelled", () => {
   assert.ok(s.pending.violet.notes.some((n) => /cancelled/.test(n)));
 });
 
-test("Fix it on a crit gives the last used skill back; Crowd needs the extras setting; both undo", () => {
+test("Fix it on a crit gives the last used skill back and undoes cleanly; Scout needs the extras setting", () => {
   const s = freshState();
-  assert.equal(validateBenchRequest(s, { benchId: "reta", action: "crowd" }).ok, false, "Crowd is off by default");
   assert.equal(validateBenchRequest(s, { benchId: "reta", action: "scout", rider: "violet" }).ok, false, "Scout is off by default");
+  applyPcCheck(s, { pcId: "violet", choiceId: "muscle-through:athletics", lineId: "standard" }, roll(15, 20));
+  assert.deepEqual(s.used.violet, ["athletics"]);
+  delete s.pending.violet;                                   // the next section: Violet has not rolled yet
+  applyBenchAction(s, { benchId: "rowan", action: "fix", rider: "violet", skill: "nature" }, roll(20, 20));   // nat 20: a success becomes a crit
+  assert.deepEqual(s.used.violet, []);
+  clearBenchAct(s, "rowan");
+  assert.deepEqual(s.used.violet, ["athletics"]);
   RULES.benchExtras = true;
-  try {
-    applyBenchAction(s, { benchId: "reta", action: "crowd" }, roll(10, 23));
-    assert.equal(s.favor.party, 1);
-    applyPcCheck(s, { pcId: "violet", choiceId: "muscle-through:athletics", lineId: "standard" }, roll(15, 20));
-    assert.deepEqual(s.used.violet, ["athletics"]);
-    delete s.pending.violet;                                   // the next section: Violet has not rolled yet
-    applyBenchAction(s, { benchId: "rowan", action: "fix", rider: "violet", skill: "nature" }, roll(20, 20));   // nat 20: a success becomes a crit
-    assert.deepEqual(s.used.violet, []);
-    clearBenchAct(s, "rowan"); clearBenchAct(s, "reta");
-    assert.deepEqual(s.used.violet, ["athletics"]);
-    assert.equal(s.favor.party, 0);
-  } finally { RULES.benchExtras = false; }
-  assert.deepEqual(availableBenchActions().map((a) => a.id), ["spotter", "pit", "fix"]);
+  assert.equal(validateBenchRequest(s, { benchId: "reta", action: "scout", rider: "violet" }).ok, true);
+  RULES.benchExtras = false;
+  assert.deepEqual(availableBenchActions("A").map((a) => a.id), ["spotter", "pit", "fix"]);
+});
+
+test("Battle: the bench can Call the attack or Work the crowd (and pit), not Spotter or Fix it", () => {
+  assert.deepEqual(availableBenchActions("C").map((a) => a.id), ["pit", "call", "crowd"]);
+  const s = freshState(); s.sec = 2;
+  assert.equal(validateBenchRequest(s, { benchId: "reta", action: "spotter", rider: "violet" }).ok, false);
+  const c = applyBenchAction(s, { benchId: "reta", action: "crowd" }, roll(10, 23));   // 33 vs 28
+  assert.ok(c.ok); assert.equal(s.favor.party, 1);
+  const k = applyBenchAction(s, { benchId: "rowan", action: "call", rider: "violet" }, roll(20, 22));   // crit
+  assert.ok(k.ok); assert.equal(s.bench.help.violet.cancelAttack, true); assert.equal(s.favor.party, 2);
+  clearBenchAct(s, "rowan"); clearBenchAct(s, "reta");
+  assert.equal(s.favor.party, 0); assert.equal(s.bench.help.violet, undefined);
+});
+
+test("a bench call cancels one NPC attack on the rider, once, and is spent after the section", async () => {
+  for (const withCall of [false, true]) {
+    const s = freshState(); s.sec = 2;
+    for (const id of Object.keys(s.vp)) s.vp[id] = 10;       // everyone in range
+    for (const t of ["syu", "ranto", "viridian", "ivory", "sarah", "dutch"]) if (s.sheltered) s.sheltered[t] = false;
+    if (withCall) applyBenchAction(s, { benchId: "reta", action: "call", rider: "violet" }, roll(15, 20));
+    const rep = await resolveSection(s, {}, async () => 6);   // every d6 hits
+    const hitsOnViolet = Object.values(rep.notes).flat().filter((n) => /^Attacks Violet/.test(n));
+    if (hitsOnViolet.length) {
+      const cancelled = hitsOnViolet.filter((n) => /bench called it/.test(n)).length;
+      assert.equal(cancelled, withCall ? 1 : 0);
+    }
+    assert.deepEqual(s.bench.help, {});
+  }
 });
 
 test("Burn: off by default; when on, +2 on the roll, the drake drops a rung, only for a Fresh or Surging drake, never in the Narrows", () => {
@@ -135,7 +159,7 @@ test("Surging lasts until the lap ends, then becomes Fresh", async () => {
   assert.equal(s.drake.aji, 1, "other conditions are not refreshed");
 });
 
-test("the bench dialog lists the three standard actions, both riders, skill choices, and a locked view after acting", () => {
+test("the bench dialog lists the standard actions for the section, both riders, skill choices, and a locked view after acting", () => {
   const s = freshState();
   const html = buildBenchDialogHtml(s, "rowan", { mods: { perception: 22, nature: 20, crafting: 22 } });
   assert.equal((html.match(/<input type="radio" name="action"/g) ?? []).length, 3);

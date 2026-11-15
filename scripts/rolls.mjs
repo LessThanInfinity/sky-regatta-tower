@@ -8,6 +8,8 @@ export const PARTY_BONUS = 2;      // untyped bonus the party carries into every
 export const BATTLE_DC = 30;
 export const NARROWS_DC = 30;
 export const MAX_FAVOR_SPEND_PER_LAP = 2;
+/** Optional rules the GM can switch on in the module settings (main.mjs keeps this in step with them). */
+export const RULES = { burn: false, benchExtras: false };
 
 export const SKILL_LABEL = {
   acrobatics: "Acrobatics", athletics: "Athletics", nature: "Nature", survival: "Survival", performance: "Performance",
@@ -166,6 +168,7 @@ export function validatePcRequest(state, req) {
   if (needsLine(menu, choice) && !LINES[lineId]) return { ok: false, error: "Pick a line." };
   if (lineId === "risky" && (state.drake[pc.id] ?? 0) >= 2) return { ok: false, error: "A Strained drake can't take a Risky line." };
   if (req.burn) {
+    if (!RULES.burn) return { ok: false, error: "Burning the drake isn't switched on." };
     if (choice.special === "narrows") return { ok: false, error: "You can't Burn the drake in the Narrows." };
     if ((state.drake[pc.id] ?? 0) > 0) return { ok: false, error: "Only a Fresh or Surging drake can be burned for the bonus." };
   }
@@ -550,7 +553,7 @@ export function buildDialogHtml(state, pcId, menu, { mods = {}, targets = [], ke
   const helpHtml = `<div class="srt-help">`
     + `${benchLine}`
     + `<label class="spend"><input type="checkbox" name="spendFavor" ${L0 ? (L0.spendFavor ? "checked disabled" : "disabled") : (favor < 1 || left < 1 ? "disabled" : "")}> Spend 1 Favor for +1 ${L0 ? "" : `<small>(party has ${favor}; ${Math.max(0, left)} left this lap)</small>`}</label>`
-    + burnHtml
+    + (RULES.burn ? burnHtml : "")
     + `<span class="srt-note">The party's +2 is added automatically.${drakeNote}</span></div>`;
 
   let resultHtml = "";

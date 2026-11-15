@@ -13,7 +13,7 @@ import { captureTops, playSlides } from "./animate.mjs";
 import { captureDraft, applyDraft } from "./draft.mjs";
 import {
   SKILL_LABEL, PARTY_BONUS, sectionMenu, validatePcRequest, computeMod, applyPcCheck, applyNarrows, clearPcRoll,
-  eligibleTargets, planNpcDice, readDialogForm, readRerollForm, rerollPcRoll, degreeOf, buildNpcDiceHtml, buildDcCardHtml, buildPcRollHtml, buildNarrowsHtml, buildDialogHtml,
+  eligibleTargets, RULES, planNpcDice, readDialogForm, readRerollForm, rerollPcRoll, degreeOf, buildNpcDiceHtml, buildDcCardHtml, buildPcRollHtml, buildNarrowsHtml, buildDialogHtml,
 } from "./rolls.mjs";
 
 const MODULE_ID = "sky-regatta-tower";
@@ -577,6 +577,17 @@ Hooks.once("init", () => {
     hint: "On: players see the dice (and Dice So Nice animates them). Off (default): only the GM sees them.",
     scope: "world", config: true, type: Boolean, default: false,
   });
+  const applyRules = () => { RULES.burn = game.settings.get(MODULE_ID, "enableBurn"); RULES.benchExtras = game.settings.get(MODULE_ID, "benchExtras"); };
+  game.settings.register(MODULE_ID, "enableBurn", {
+    name: "Allow Burn the drake",
+    hint: "Off (default): riders can't trade a drake rung for +2 on a roll. On: a rider with a Fresh or Surging drake can Burn it.",
+    scope: "world", config: true, type: Boolean, default: false, onChange: applyRules,
+  });
+  game.settings.register(MODULE_ID, "benchExtras", {
+    name: "Extra bench actions (Scout, Crowd)",
+    hint: "Off (default): the bench has Spotter, Pit crew and Fix it. On: Scout and Crowd are available too.",
+    scope: "world", config: true, type: Boolean, default: false, onChange: applyRules,
+  });
   game.settings.register(MODULE_ID, "npcBench", {
     name: "NPC bench strength",
     hint: "Each NPC rider's team has a bench too: this is the chance, each lap, that it gives them +1 on the lap roll. 0.2 (default) keeps the party around 27 percent if they only spot and about 40 percent if they go All-out and use pit stops; 0.5 is much tougher.",
@@ -590,6 +601,8 @@ Hooks.once("init", () => {
 });
 
 Hooks.once("ready", () => {
+  RULES.burn = game.settings.get(MODULE_ID, "enableBurn");
+  RULES.benchExtras = game.settings.get(MODULE_ID, "benchExtras");
   const mod = game.modules.get(MODULE_ID);
   mod.api = {
     open: () => getApp().render({ force: true }),

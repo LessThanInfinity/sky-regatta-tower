@@ -4,7 +4,7 @@
  * state.bench so the riders' rolls (and the next resolveSection) pick it up.
  */
 import { ROSTER, BENCH, normalizeState, signed, esc } from "./engine.mjs";
-import { degreeOf, SKILL_LABEL, DEGREE_LABEL, drakeName, DRAKE_MIN, PARTY_BONUS, cardHead, degPill, sectionTitle } from "./rolls.mjs";
+import { degreeOf, SKILL_LABEL, DEGREE_LABEL, drakeName, DRAKE_MIN, PARTY_BONUS, RULES, cardHead, degPill, sectionTitle } from "./rolls.mjs";
 
 export const PIT_COST = -1;                    // VP a rider pays to box
 
@@ -12,20 +12,21 @@ export const PIT_COST = -1;                    // VP a rider pays to box
 export const BENCH_ACTIONS = [
   { id: "spotter", name: "Spotter", skills: ["perception"], dc: 28, target: true, before: true,
     desc: "Read the gaps for your rider. Success: +1 circumstance on their roll this section. Crit: +2." },
-  { id: "handler", name: "Handler", skills: ["nature"], dc: 30, target: true, before: true,
-    desc: "Calm the drake. Success: their drake's penalty is ignored this section, and one Narrows strike is cancelled. Crit: also +1 circumstance." },
   { id: "pit", name: "Pit crew", skills: ["nature", "medicine", "crafting"], dc: 30, target: true,
     desc: `Box your rider: they pay ${PIT_COST} VP. Success: the drake climbs a rung (up to Surging). Crit: two rungs. Crit failure: it drops a rung. Once per rider per lap.` },
-  { id: "scout", name: "Scout", skills: ["society", "survival"], dc: 28, target: true, before: true,
+  { id: "fix", name: "Fix it", skills: ["nature", "diplomacy"], dc: 30, target: true, before: true,
+    desc: "Calm the drake and settle your rider. Success: their drake's penalty is ignored this section and one Narrows strike is cancelled. Crit: their last used skill can be used again this lap." },
+  // switched on with the "extra bench actions" setting
+  { id: "scout", name: "Scout", skills: ["society", "survival"], dc: 28, target: true, before: true, extra: true,
     desc: "Study the course. Success: the GM tells you the best lane or line ahead. Crit: also +1 circumstance for your rider." },
-  { id: "crowd", name: "Crowd", skills: ["performance"], dc: 28, target: false,
-    desc: "Work the stands. Success: the party gains 1 Favor. Crit: 2 Favor." },
-  { id: "coach", name: "Coach", skills: ["diplomacy"], dc: 30, target: true,
-    desc: "Talk your rider through a reset. Success: the last skill they used can be used again this lap. Crit: the last two." },
+  { id: "crowd", name: "Crowd", skills: ["performance"], dc: 28, target: false, extra: true,
+    desc: "Work the stands. Success: the party gains 1 Favor. Crit: 2 Favor. (No VP.)" },
 ];
+/** The actions on offer under the current rules. */
+export const availableBenchActions = () => BENCH_ACTIONS.filter((a) => !a.extra || RULES.benchExtras);
 
 export const benchEntry = (id) => BENCH.find((b) => b.id === id);
-export const benchAction = (id) => BENCH_ACTIONS.find((a) => a.id === id);
+export const benchAction = (id) => BENCH_ACTIONS.find((a) => a.id === id);   // any action, even a switched-off one (old results keep their names)
 const riderOf = (id) => ROSTER.find((r) => r.id === id && r.pc);
 
 /** The bench member's modifier: skill plus the party's +2. */
@@ -37,7 +38,7 @@ export function validateBenchRequest(state, req) {
   if (state.lap > 4) return { ok: false, error: "The race is over." };
   const member = benchEntry(req.benchId);
   if (!member) return { ok: false, error: "That bench member isn't on the team." };
-  const action = benchAction(req.action);
+  const action = availableBenchActions().find((a) => a.id === req.action);
   if (!action) return { ok: false, error: "Pick a bench action." };
   const skill = req.skill || action.skills[0];
   if (!action.skills.includes(skill)) return { ok: false, error: `${action.name} can't use ${SKILL_LABEL[skill] ?? skill}.` };
@@ -48,7 +49,6 @@ export function validateBenchRequest(state, req) {
     if (!rider) return { ok: false, error: "Pick which rider you're helping." };
     if (action.before && state.pending[rider.id]) return { ok: false, error: `${rider.name} has already rolled this section, so help has to come first.` };
     if (action.id === "pit" && state.bench.pitLap[rider.id] === state.lap) return { ok: false, error: `${rider.name} has already boxed this lap.` };
-    if (action.id === "coach" && !(state.used[rider.id] ?? []).length) return { ok: false, error: `${rider.name} hasn't used a skill this lap, so there is nothing to reset.` };
   }
   return { ok: true, member, action, skill, rider };
 }
@@ -75,11 +75,14 @@ export function applyBenchAction(state, req, roll) {
     const bonus = crit ? 2 : win ? 1 : 0;
     if (bonus) { const h = help(); h.bonus = Math.max(h.bonus ?? 0, bonus); notes.push(`${rider.name} gets +${bonus} circumstance on their roll this section`); }
     else notes.push("Nothing useful spotted.");
-  } else if (action.id === "handler") {
+  } else if (action.id === "fix") {
     if (win) {
       const h = help(); h.ignoreDrake = true; h.cancelStrike = true;
-      if (crit) h.bonus = Math.max(h.bonus ?? 0, 1);
-      notes.push(`${rider.name}'s drake penalty is ignored this section${crit ? " (+1 circumstance too)" : ""}; one Narrows strike would be cancelled`);
+      notes.push(`${rider.name}'s drake penalty is ignored this section; one Narrows strike would be cancelled`);
+      if (crit) {
+        const used = state.used[rider.id] ?? [];
+        if (used.length) { const sk = used.pop(); change.usedRestored.unshift(sk); notes.push(`${rider.name} can use ${SKILL_LABEL[sk] ?? sk} again this lap`); }
+      }
     } else notes.push("The drake stays jumpy.");
   } else if (action.id === "pit") {
     change.pitPrev = state.bench.pit[rider.id] ? { ...state.bench.pit[rider.id] } : null;
@@ -100,11 +103,6 @@ export function applyBenchAction(state, req, roll) {
   } else if (action.id === "crowd") {
     const n = crit ? 2 : win ? 1 : 0;
     if (n) { state.favor.party += n; change.favor = n; notes.push(`+${n} party Favor`); } else notes.push("The stands stay quiet.");
-  } else if (action.id === "coach") {
-    const n = crit ? 2 : win ? 1 : 0;
-    const used = state.used[rider.id] ?? [];
-    for (let i = 0; i < n && used.length; i++) { const sk = used.pop(); change.usedRestored.unshift(sk); }
-    notes.push(change.usedRestored.length ? `${rider.name} can use ${change.usedRestored.map((s) => SKILL_LABEL[s] ?? s).join(" and ")} again this lap` : "Nothing reset.");
   }
 
   const summary = `${action.name}${rider ? ` for ${rider.name}` : ""} (${SKILL_LABEL[skill]}): ${total} ${DEGREE_LABEL[degree]}. ${notes.join("; ")}`;
@@ -175,7 +173,7 @@ export function buildBenchDialogHtml(state, benchId, { mods = {}, locked = null 
   const done = locked ? `<div class="srt-locked"><div class="cap">${esc(member.name)} has already acted this section</div>${buildBenchCardHtml(locked)}</div>` : "";
   const step = (n, t) => `<div class="srt-step"><span class="n">${n}</span> ${t}</div>`;
   return `<div class="srt-dialog srt-bench"><style>${css}</style>${done}<p class="srt-intro">${esc(member.name)} helps from the pit wall. One action per section.</p>`
-    + step(1, "Choose your action") + `<div class="srt-opts">${BENCH_ACTIONS.map(tile).join("")}</div>`
+    + step(1, "Choose your action") + `<div class="srt-opts">${availableBenchActions().map(tile).join("")}</div>`
     + `<div class="srt-bench-riders">${step(2, "Which rider?")}<div class="srt-sponsors srt-two">${ROSTER.filter((r) => r.pc).map(riderCard).join("")}</div></div>`
     + skillSets + `<div class="srt-note">Your roll adds the party's +2. Help has to come before the rider rolls (except the Pit crew).</div></div>`;
 }

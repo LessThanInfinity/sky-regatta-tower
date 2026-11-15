@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { freshState, resolveSection, sectionLimits } from "../scripts/engine.mjs";
-import { applyPcCheck, applyNarrows, computeMod, validatePcRequest } from "../scripts/rolls.mjs";
-import { validateBenchRequest, applyBenchAction, clearBenchAct, buildBenchDialogHtml, buildBenchCardHtml, readBenchForm, benchMod, PIT_COST } from "../scripts/bench.mjs";
+import { applyPcCheck, applyNarrows, computeMod, validatePcRequest, RULES } from "../scripts/rolls.mjs";
+import { availableBenchActions, validateBenchRequest, applyBenchAction, clearBenchAct, buildBenchDialogHtml, buildBenchCardHtml, readBenchForm, benchMod, PIT_COST } from "../scripts/bench.mjs";
 
 const roll = (nat, mod = 20) => ({ nat, mod, parts: [{ label: "skill", value: mod }] });
 const act = (s, over, r = roll(15)) => applyBenchAction(s, { benchId: "reta", action: "spotter", rider: "violet", ...over }, r);
@@ -75,33 +75,43 @@ test("the pit cost comes off the rider's VP when the section resolves, and the b
   assert.equal(sectionLimits(1, "B", { pit: true }).min, sectionLimits(1, "B").min - 1);
 });
 
-test("Handler: the penalty is ignored and a Narrows strike is cancelled", () => {
+test("Fix it: the penalty is ignored and a Narrows strike is cancelled", () => {
   const s = freshState(); s.lap = 2; s.sec = 1; s.drake.violet = 2;
   const hasDrake = () => computeMod(s, "violet", "A", {}, 18).parts.some((p) => /drake/.test(p.label));
   assert.equal(hasDrake(), true);
-  applyBenchAction(s, { benchId: "rowan", action: "handler", rider: "violet" }, roll(12, 20));
+  applyBenchAction(s, { benchId: "rowan", action: "fix", rider: "violet", skill: "nature" }, roll(12, 20));
   assert.equal(hasDrake(), false);
   const nreq = { pcId: "violet", choiceId: "the-narrows-inside-sheltered:narrows", narrows: ["athletics", "nature", "survival"] };
   const res = applyNarrows(s, nreq, [{ skill: "athletics", nat: 2, mod: 20 }, { skill: "nature", nat: 15, mod: 20 }, { skill: "survival", nat: 3, mod: 20 }], { autoVp: true });
   assert.ok(res.ok);
   assert.equal(s.sheltered.violet, true, "two failures, one cancelled: still sheltered");
-  assert.ok(s.pending.violet.notes.some((n) => /Handler/.test(n)));
+  assert.ok(s.pending.violet.notes.some((n) => /cancelled/.test(n)));
 });
 
-test("Crowd adds Favor; Coach gives a used skill back; both undo", () => {
+test("Fix it on a crit gives the last used skill back; Crowd needs the extras setting; both undo", () => {
   const s = freshState();
-  applyBenchAction(s, { benchId: "reta", action: "crowd" }, roll(10, 23));
-  assert.equal(s.favor.party, 1);
-  applyPcCheck(s, { pcId: "violet", choiceId: "muscle-through:athletics", lineId: "standard" }, roll(15, 20));
-  assert.deepEqual(s.used.violet, ["athletics"]);
-  applyBenchAction(s, { benchId: "rowan", action: "coach", rider: "violet" }, roll(15, 20));   // 35 vs 30
-  assert.deepEqual(s.used.violet, []);
-  clearBenchAct(s, "rowan"); clearBenchAct(s, "reta");
-  assert.deepEqual(s.used.violet, ["athletics"]);
-  assert.equal(s.favor.party, 0);
+  assert.equal(validateBenchRequest(s, { benchId: "reta", action: "crowd" }).ok, false, "Crowd is off by default");
+  assert.equal(validateBenchRequest(s, { benchId: "reta", action: "scout", rider: "violet" }).ok, false, "Scout is off by default");
+  RULES.benchExtras = true;
+  try {
+    applyBenchAction(s, { benchId: "reta", action: "crowd" }, roll(10, 23));
+    assert.equal(s.favor.party, 1);
+    applyPcCheck(s, { pcId: "violet", choiceId: "muscle-through:athletics", lineId: "standard" }, roll(15, 20));
+    assert.deepEqual(s.used.violet, ["athletics"]);
+    delete s.pending.violet;                                   // the next section: Violet has not rolled yet
+    applyBenchAction(s, { benchId: "rowan", action: "fix", rider: "violet", skill: "nature" }, roll(20, 20));   // nat 20: a success becomes a crit
+    assert.deepEqual(s.used.violet, []);
+    clearBenchAct(s, "rowan"); clearBenchAct(s, "reta");
+    assert.deepEqual(s.used.violet, ["athletics"]);
+    assert.equal(s.favor.party, 0);
+  } finally { RULES.benchExtras = false; }
+  assert.deepEqual(availableBenchActions().map((a) => a.id), ["spotter", "pit", "fix"]);
 });
 
-test("Burn: +2 on the roll, the drake drops a rung, only for a Fresh or Surging drake, never in the Narrows", () => {
+test("Burn: off by default; when on, +2 on the roll, the drake drops a rung, only for a Fresh or Surging drake, never in the Narrows", () => {
+  const off = freshState();
+  assert.equal(validatePcRequest(off, { pcId: "violet", choiceId: "muscle-through:athletics", lineId: "standard", burn: true }).ok, false);
+  RULES.burn = true;
   const s = freshState();
   const req = { pcId: "violet", choiceId: "muscle-through:athletics", lineId: "standard", burn: true };
   const m = computeMod(s, "violet", "A", req, 18);
@@ -112,6 +122,7 @@ test("Burn: +2 on the roll, the drake drops a rung, only for a Fresh or Surging 
   assert.equal(validatePcRequest(w, { ...req, pcId: "aji" }).ok, false);
   const n = freshState(); n.lap = 2; n.sec = 1;
   assert.equal(validatePcRequest(n, { pcId: "violet", choiceId: "the-narrows-inside-sheltered:narrows", narrows: ["athletics", "nature", "survival"], burn: true }).ok, false);
+  RULES.burn = false;
 });
 
 test("Surging lasts until the lap ends, then becomes Fresh", async () => {
@@ -124,10 +135,10 @@ test("Surging lasts until the lap ends, then becomes Fresh", async () => {
   assert.equal(s.drake.aji, 1, "other conditions are not refreshed");
 });
 
-test("the bench dialog lists every action, both riders, skill choices, and a locked view after acting", () => {
+test("the bench dialog lists the three standard actions, both riders, skill choices, and a locked view after acting", () => {
   const s = freshState();
   const html = buildBenchDialogHtml(s, "rowan", { mods: { perception: 22, nature: 20, crafting: 22 } });
-  assert.equal((html.match(/<input type="radio" name="action"/g) ?? []).length, 6);
+  assert.equal((html.match(/<input type="radio" name="action"/g) ?? []).length, 3);
   assert.equal((html.match(/<input type="radio" name="rider"/g) ?? []).length, 2);
   assert.match(html, /name="skill_pit"/);
   assert.doesNotMatch(html, /<form/i);

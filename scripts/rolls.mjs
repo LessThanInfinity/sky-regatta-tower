@@ -12,6 +12,7 @@ export const MAX_FAVOR_SPEND_PER_LAP = 2;
 export const SKILL_LABEL = {
   acrobatics: "Acrobatics", athletics: "Athletics", nature: "Nature", survival: "Survival", performance: "Performance",
   deception: "Deception", intimidation: "Intimidation", perception: "Perception", diplomacy: "Diplomacy",
+  crafting: "Crafting", medicine: "Medicine", society: "Society",
 };
 export const LINES = {
   safe:     { id: "safe",     label: "Hold pace", dc: 28, vp: [1, 2] },
@@ -19,6 +20,9 @@ export const LINES = {
   risky:    { id: "risky",    label: "All-out",   dc: 32, vp: [3, 4] },
 };
 export const DRAKE_STATES = ["Fresh", "Winded", "Strained", "Spent"];
+/** Rung -1 is Surging (one above Fresh). */
+export const drakeName = (rung) => (rung < 0 ? "Surging" : DRAKE_STATES[rung] ?? "Fresh");
+export const DRAKE_MIN = -1;
 const DRAKE_PENALTY = [0, -1, -2, 0];
 export const drakePenalty = (rung) => DRAKE_PENALTY[rung] ?? 0;
 
@@ -69,12 +73,21 @@ const CABLE_WEB = [
   lane("Middle lane", "acrobatics", "standard", "Thread the wider gaps. Crit failure: the drake scrapes a cable and drops a rung.", { fx: { critFailure: { drake: 1 } } }),
   lane("Low lane", "perception", "risky", "Dive through the tightest gap, the fastest line. Crit failure: the drake scrapes a cable and drops a rung.", { fx: { critFailure: { drake: 1 } } }),
 ];
-const RINGS = [
-  mk("Qiu May's silk (smooth)", "nature", "A clean, gentle pass.", { patron: "qiu", top: true, fx: { critFailure: { drake: 1 } } }),
-  mk("Qiu May's silk (smooth)", "acrobatics", "A clean, gentle pass.", { patron: "qiu", fx: { critFailure: { drake: 1 } } }),
-  mk("Hida's steel (disciplined)", "athletics", "A tight, aggressive pass.", { patron: "hida", top: true, fx: { critFailure: { drake: 1 } } }),
-  mk("Hida's steel (disciplined)", "intimidation", "A tight, aggressive pass.", { patron: "hida", fx: { critFailure: { drake: 1 } } }),
+/** The sponsors watching the Sponsors' Rings. Add one by adding a line here; `favors` are the skills they like. */
+export const SPONSORS = [
+  { id: "qiu", name: "Lady Qiu May Shai", style: "Gentle with animals and drakes", favors: ["nature", "acrobatics"] },
+  { id: "hida", name: "General Kaso Hida", style: "Disciplined, no politics", favors: ["athletics", "intimidation"] },
+  { id: "roku", name: "Grandmaster Roku Ashida", style: "Finish with flair", favors: ["athletics", "performance"] },
+  { id: "xhai", name: "Lady Xhai Zhia", style: "Theatrical, loves a show", favors: ["performance", "intimidation"] },
+  { id: "dorik", name: "Foreman Dorik Ironvein", style: "Practical, mechanical", favors: ["athletics", "intimidation"] },
+  { id: "unmar", name: "Lord Aldanar Unmar", style: "Exacting, easily offended", favors: ["intimidation", "deception"] },
+  { id: "malaika", name: "Malaika Tao", style: "Administrator: useful, not flashy", favors: ["deception", "survival"] },
+  { id: "anjali", name: "Matriarch Anjali Veshnaag", style: "Reverent, scorns showboating", favors: ["athletics", "nature"] },
+  { id: "yudzuki", name: "Seer Yudzuki Amaya", style: "Honest signs, hates posturing", favors: ["survival", "nature"] },
+  { id: "lien", name: "Broker Lien Hua", style: "Cunning, hidden angles", favors: ["deception", "survival"] },
 ];
+const RING_SKILLS = ["athletics", "acrobatics", "nature", "survival", "intimidation", "deception", "performance"];
+const RINGS = RING_SKILLS.map((sk) => mk("Sponsors' Rings", sk, "Thread the rings under your sponsor's eye. Crit failure: your drake drops a rung.", { sponsored: true, fx: { critFailure: { drake: 1 } } }));
 const NARROWS = mk("The Narrows (inside, sheltered)", "narrows", "Three checks at DC 30, each with a DIFFERENT skill. A success is +1 VP, a crit +2, and a failure is a strike. Two strikes: -1 VP and no shelter. Sheltered riders can't be targeted in Battle. These checks don't count toward the no-repeat rule.", { special: "narrows" });
 const DIP = ["athletics", "acrobatics", "nature", "survival"].map((sk) => mk("The Dip (outside, exposed)", sk, "One roll with the usual line choice. You enter Battle unsheltered."));
 const BATTLE = [
@@ -95,7 +108,7 @@ export function sectionMenu(lap, key) {
   if (lap === 1) return { type: "lane", title, intro: "Pick a lane. Each lane has its own skill and DC.", lines: null, choices: BELL_GATE };
   if (lap === 3) return { type: "lane", title, intro: "Pick a lane. Each lane has its own skill and DC.", lines: null, choices: CABLE_WEB };
   if (lap === 2) return { type: "hall", title, intro: "Choose your route. The Dip needs a line; the Narrows is three checks.", lines, choices: [NARROWS, ...DIP] };
-  return { type: "approach", title, intro: "Pick a patron, a skill and a line.", lines, choices: RINGS };
+  return { type: "rings", title, intro: "Pick a line, the sponsor you want to impress, and any skill you haven't used this lap.", lines, choices: RINGS };
 }
 
 /** The rules each choice follows, derived from its fields. */
@@ -119,13 +132,17 @@ export function eligibleTargets(state, pcId) {
 /** The numbers added to a PC's d20: skill, party bonus, drake condition, bench help, Favor and carried bonuses. */
 export function computeMod(state, pcId, key, req, skillMod) {
   const parts = [{ label: "skill", value: skillMod }, { label: "party", value: PARTY_BONUS }];
-  const pen = drakePenalty(state.drake?.[pcId] ?? 0);
-  if (pen) parts.push({ label: `drake (${DRAKE_STATES[state.drake[pcId]]})`, value: pen });
+  const help = state.bench?.help?.[pcId] ?? {};
+  const rung = state.drake?.[pcId] ?? 0;
+  const pen = help.ignoreDrake ? 0 : drakePenalty(rung);
+  if (pen) parts.push({ label: `drake (${drakeName(rung)})`, value: pen });
   const carried = key === "B" ? (state.bonus?.[pcId] ?? 0) : 0;
-  const circ = Math.max(Number(req.bench) || 0, carried);     // circumstance bonuses don't stack: the best one counts
+  const surge = rung < 0 ? 1 : 0;
+  const circ = Math.max(Number(req.bench) || 0, carried, help.bonus ?? 0, surge);     // circumstance bonuses don't stack: the best one counts
   if (circ) parts.push({ label: "circumstance", value: circ });
+  if (req.burn) parts.push({ label: "Burn", value: 2 });
   if (req.spendFavor) parts.push({ label: "Favor", value: 1 });
-  return { parts, total: parts.reduce((a, p) => a + p.value, 0), usedCarried: carried > 0 && circ === carried };
+  return { parts, total: parts.reduce((a2, p) => a2 + p.value, 0), usedCarried: carried > 0 && circ === carried };
 }
 
 /** Checks a request against the current state. Returns { ok, error } or { ok, menu, choice, lineId, dc }. */
@@ -144,9 +161,14 @@ export function validatePcRequest(state, req) {
   const choice = menu.choices.find((c) => c.id === req.choiceId);
   if (!choice) return { ok: false, error: "Pick one of the options." };
   if (isLineRoll(choice) && skillUsed(state, pc.id, choice.skill)) return { ok: false, error: `${SKILL_LABEL[choice.skill]} has already been used this lap.` };
+  if (choice.sponsored && !SPONSORS.some((x) => x.id === req.sponsor)) return { ok: false, error: "Pick a sponsor." };
   let lineId = choice.line ?? (choice.noLine ? "standard" : req.lineId);
   if (needsLine(menu, choice) && !LINES[lineId]) return { ok: false, error: "Pick a line." };
   if (lineId === "risky" && (state.drake[pc.id] ?? 0) >= 2) return { ok: false, error: "A Strained drake can't take a Risky line." };
+  if (req.burn) {
+    if (choice.special === "narrows") return { ok: false, error: "You can't Burn the drake in the Narrows." };
+    if ((state.drake[pc.id] ?? 0) > 0) return { ok: false, error: "Only a Fresh or Surging drake can be burned for the bonus." };
+  }
   if (req.spendFavor) {
     if ((state.favor.party ?? 0) < 1) return { ok: false, error: "The party has no Favor to spend." };
     if ((state.favor.spent ?? 0) >= MAX_FAVOR_SPEND_PER_LAP) return { ok: false, error: `Only ${MAX_FAVOR_SPEND_PER_LAP} Favor can be spent per lap.` };
@@ -189,6 +211,12 @@ export function applyPcCheck(state, req, roll, options = {}) {
   let vp = choice.noVp || choice.battle ? 0 : lineVp(lineId, degree);
   if (lineId === "risky" && (degree === "failure" || degree === "critFailure")) ctx.drake = Math.max(ctx.drake, 1);
   applyEffect(state, pcId, choice.fx[degree], ctx, change, notes);
+  let sponsorFavored = false;
+  if (choice.sponsored) {
+    const sp = SPONSORS.find((x) => x.id === req.sponsor);
+    sponsorFavored = sp.favors.includes(choice.skill);
+    notes.push(`Sponsor: ${sp.name}${sponsorFavored ? " ★ (a skill they favor)" : ""}`);
+  }
 
   if (choice.needsBehind && ctx.self) {
     const tgt = ctx.target ? totalNow(state, ctx.target) : null;
@@ -197,8 +225,9 @@ export function applyPcCheck(state, req, roll, options = {}) {
   vp += ctx.self;
 
   // drake condition: at most one rung down per roll, or one up for a crit
-  if (ctx.drake > 0) { const b = state.drake[pcId]; state.drake[pcId] = Math.min(3, b + 1); change.drake = state.drake[pcId] - b; notes.push(`Drake drops a rung (${DRAKE_STATES[state.drake[pcId]]})`); }
-  else if (ctx.drake < 0) { const b = state.drake[pcId]; state.drake[pcId] = Math.max(0, b - 1); change.drake = state.drake[pcId] - b; if (change.drake) notes.push(`Drake climbs a rung (${DRAKE_STATES[state.drake[pcId]]})`); }
+  if (ctx.drake > 0) { const b = state.drake[pcId]; state.drake[pcId] = Math.min(3, b + 1); change.drake = state.drake[pcId] - b; notes.push(`Drake drops a rung (${drakeName(state.drake[pcId])})`); }
+  else if (ctx.drake < 0) { const b = state.drake[pcId]; state.drake[pcId] = Math.max(DRAKE_MIN, b - 1); change.drake = state.drake[pcId] - b; if (change.drake) notes.push(`Drake climbs a rung (${drakeName(state.drake[pcId])})`); }
+  if (req.burn) { const b0 = state.drake[pcId]; state.drake[pcId] = Math.min(3, b0 + 1); change.drake += state.drake[pcId] - b0; notes.push(`Burned the drake for +2 (now ${drakeName(state.drake[pcId])})`); }
 
   // costs and carried bonuses
   if (req.spendFavor) { state.favor.party -= 1; state.favor.spent += 1; change.favor -= 1; change.favorSpent = 1; }
@@ -213,7 +242,8 @@ export function applyPcCheck(state, req, roll, options = {}) {
     lap: state.lap, key, choiceId: choice.id, group: choice.group, skill: choice.skill, lineId: lineId ?? null, dc,
     nat: roll.nat, mod: roll.mod, total, degree, vp: auto ? vp : 0, suggested: vp, auto, hold: ctx.hold, notes, summary, undo: change, target: ctx.target,
     bench: Number(req.bench) || 0, spendFavor: !!req.spendFavor, parts: roll.parts ?? [],
-    request: { choiceId: req.choiceId, lineId: req.lineId, target: req.target, bench: Number(req.bench) || 0, spendFavor: !!req.spendFavor },
+    sponsor: req.sponsor ?? null, sponsorFavored, burn: !!req.burn,
+    request: { choiceId: req.choiceId, lineId: req.lineId, target: req.target, sponsor: req.sponsor, bench: Number(req.bench) || 0, spendFavor: !!req.spendFavor, burn: !!req.burn },
   };
   return { ok: true, pending: state.pending[pcId], parts: roll.parts ?? [] };
 }
@@ -232,9 +262,12 @@ export function applyNarrows(state, req, rolls, options = {}) {
     if (degree === "critSuccess") vp += 2; else if (degree === "success") vp += 1; else strikes += 1;
     return { skill: r.skill, nat: r.nat, mod: r.mod, total, degree };
   });
+  let cancelled = false;
+  if (state.bench?.help?.[pcId]?.cancelStrike && strikes > 0) { strikes -= 1; cancelled = true; }
   const out = strikes >= 2;
   if (out) vp -= 1;
   const notes = [`${strikes} strike${strikes === 1 ? "" : "s"}${out ? ": thrown out of the Narrows (-1 VP, no shelter)" : ": still sheltered"}`];
+  if (cancelled) notes.push("The Handler cancelled one strike.");
   const change = { favor: 0, drake: 0, adj: {}, influence: { qiu: 0, hida: 0 }, bonusSet: 0, usedSkill: null, bonusSpent: 0, favorSpent: 0, shelteredPrev: !!state.sheltered[pcId] };
   if (req.spendFavor) { state.favor.party -= 1; state.favor.spent += 1; change.favor -= 1; change.favorSpent = 1; }
   state.sheltered[pcId] = !out;
@@ -250,7 +283,7 @@ export function clearPcRoll(state, pcId) {
   const u = p.undo;
   state.favor.party = Math.max(0, state.favor.party - (u.favor ?? 0));
   state.favor.spent = Math.max(0, state.favor.spent - (u.favorSpent ?? 0));
-  if (u.drake) state.drake[pcId] = Math.min(3, Math.max(0, state.drake[pcId] - u.drake));
+  if (u.drake) state.drake[pcId] = Math.min(3, Math.max(DRAKE_MIN, state.drake[pcId] - u.drake));
   for (const [id, n] of Object.entries(u.adj ?? {})) { state.pendingAdj[id] = (state.pendingAdj[id] ?? 0) - n; if (!state.pendingAdj[id]) delete state.pendingAdj[id]; }
   for (const g of ["qiu", "hida"]) state.influence[g] = Math.max(0, state.influence[g] - (u.influence?.[g] ?? 0));
   if (u.bonusSet) state.bonus[pcId] = u.bonusPrev ?? 0;
@@ -369,9 +402,9 @@ export function planNpcDice(npcs, lap, key, modFor, attackerIds = new Set(), ctx
 }
 
 // ---------- HTML for chat cards and dialogs ----------
-const sectionTitle = (lap, key) => `Section ${sectionNumber(lap, key)}/16 · Lap ${lap} ${key} · ${SECTION_NAME[key]}${key === "B" ? ` · ${OBSTACLE[lap]}` : ""}`;
-const cardHead = (title, sub = "") => `<div class="srt-card-head"><span class="badge">SKY REGATTA</span><span class="title">${esc(title)}</span>${sub ? `<span class="sub">${esc(sub)}</span>` : ""}</div>`;
-const degPill = (degree) => `<span class="deg ${degree}">${DEGREE_LABEL[degree]}</span>`;
+export const sectionTitle = (lap, key) => `Section ${sectionNumber(lap, key)}/16 · Lap ${lap} ${key} · ${SECTION_NAME[key]}${key === "B" ? ` · ${OBSTACLE[lap]}` : ""}`;
+export const cardHead = (title, sub = "") => `<div class="srt-card-head"><span class="badge">SKY REGATTA</span><span class="title">${esc(title)}</span>${sub ? `<span class="sub">${esc(sub)}</span>` : ""}</div>`;
+export const degPill = (degree) => `<span class="deg ${degree}">${DEGREE_LABEL[degree]}</span>`;
 const vpLine = (vp, auto) => (auto ? `<b>${signed(vp)} VP</b>` : `<b>Suggested: ${signed(vp)} VP</b> <small>(the GM sets the VP)</small>`);
 
 /** The six NPC d20s for the show: one tidy row per rider. */
@@ -399,7 +432,7 @@ export function buildDcCardHtml(state, lap, key) {
   } else {
     cols = Object.values(LINES).map((L) => col(L.id, L.label, L.id === "safe" ? "Steady" : L.id === "standard" ? "The usual" : "High stakes", L.dc, L.vp)).join("");
     if (menu.type === "hall") extra = `<div class="banner"><span class="dc">DC ${NARROWS_DC}</span><span>The Narrows: three checks, three different skills</span></div>`;
-    if (lap === 4) extra = `<div class="banner"><span>Pick a patron: Qiu May's silk (Nature, Acrobatics) or Hida's steel (Athletics, Intimidation)</span></div>`;
+    if (lap === 4) extra = `<div class="banner"><span>Pick one of the ${SPONSORS.length} sponsors to impress, and any skill you haven't used</span></div>`;
   }
   const used = ["violet", "aji"].map((id) => {
     const list = (state.used?.[id] ?? []).map((sk) => `<span class="chip"><s>${SKILL_LABEL[sk]}</s></span>`).join("");
@@ -408,7 +441,8 @@ export function buildDcCardHtml(state, lap, key) {
   return `<div class="srt-card srt-dc">${cardHead(sectionTitle(lap, key))}`
     + (cols ? `<div class="srt-dc-cols">${cols}</div>` : "") + extra
     + (menu.type === "battle" ? "" : `<div class="srt-card-foot"><span class="cap">Skills used this lap (no repeats)</span>${used}</div>`)
-    + `<button type="button" class="srt-card-btn" data-srt-action="roll" data-lap="${lap}" data-key="${key}"><i class="fa-solid fa-dice-d20"></i> Roll my check</button></div>`;
+    + `<button type="button" class="srt-card-btn" data-srt-action="roll" data-lap="${lap}" data-key="${key}"><i class="fa-solid fa-dice-d20"></i> Roll my check</button>`
+    + `<button type="button" class="srt-card-btn srt-card-btn2" data-srt-action="bench"><i class="fa-solid fa-people-group"></i> Bench action</button></div>`;
 }
 
 /** A PC's roll: the big total, the degree, and what it does. */
@@ -460,8 +494,9 @@ export function buildDialogHtml(state, pcId, menu, { mods = {}, targets = [], ke
     const mod = mods[c.skill];
     const modHtml = mod === undefined ? "" : `<span class="mod">${signed(mod)}</span>`;
     const pill = c.line ? `<span class="pill ${c.line}">${LINES[c.line].label} · DC ${LINES[c.line].dc}</span>` : "";
-    const left = isUsed ? `<span class="skill"><s>${esc(SKILL_LABEL[c.skill])}</s></span><span class="usedtag">used this lap</span>` : `<span class="skill">${esc(SKILL_LABEL[c.skill])}${modHtml}</span>${pill}`;
-    return `<label class="srt-pick srt-opt${dim ? " off" : ""}"><input type="radio" name="choice" value="${c.id}" ${L0 && L0.choiceId === c.id ? "checked" : ""} ${dim || L0 ? "disabled" : ""}>`
+    const left = isUsed ? `<span class="skill"><s>${esc(SKILL_LABEL[c.skill])}</s></span><span class="usedtag">used this lap</span>` : `<span class="skill">${esc(SKILL_LABEL[c.skill])}${modHtml}<span class="star" title="A skill your sponsor favors">&#9733;</span></span>${pill}`;
+    const favCls = c.sponsored ? SPONSORS.filter((x) => x.favors.includes(c.skill)).map((x) => ` fav-${x.id}`).join("") : "";
+    return `<label class="srt-pick srt-opt${dim ? " off" : ""}${favCls}"><input type="radio" name="choice" value="${c.id}" ${L0 && L0.choiceId === c.id ? "checked" : ""} ${dim || L0 ? "disabled" : ""}>`
       + `<span class="card"><span class="left">${left}</span><span class="right"><b>${esc(c.group)}</b><span>${esc(c.desc)}</span></span></span></label>`;
   };
   const tiles = (list) => `<div class="srt-opts">${list.map(tile).join("")}</div>`;
@@ -480,6 +515,14 @@ export function buildDialogHtml(state, pcId, menu, { mods = {}, targets = [], ke
       + `<div class="srt-route-panel srt-route-narrows">${stepHead(2, "Pick three different skills")}<div class="srt-narrows">${chips}</div>`
       + `<div class="srt-note">${esc(nar.desc)}</div><input type="hidden" name="narrowsChoice" value="${nar.id}"></div>`
       + `<div class="srt-route-panel srt-route-dip">${stepHead(2, "Choose your line")}${linesPanel()}${stepHead(3, "Choose your skill")}${tiles(dip)}</div>`;
+  } else if (menu.type === "rings") {
+    const chosen = L0 ? L0.sponsor : null;
+    const card = (x) => `<label class="srt-pick srt-sponsor-card${L0 && chosen !== x.id ? " off" : ""}"><input type="radio" name="sponsor" value="${x.id}" ${chosen === x.id ? "checked" : ""} ${L0 ? "disabled" : ""}>`
+      + `<span class="card"><span class="head"><b>${esc(x.name)}</b></span><span class="tag">${esc(x.style)}</span><span class="txt">Likes ${x.favors.map((f) => SKILL_LABEL[f]).join(", ")}</span></span></label>`;
+    const starCss = SPONSORS.map((x) => `.srt-dialog:has(input[name="sponsor"][value="${x.id}"]:checked) .srt-opt.fav-${x.id} .star { display: inline; }`).join("\n");
+    body = `<style>${starCss}</style>` + stepHead(1, "Choose your line") + linesPanel()
+      + stepHead(2, "Choose your sponsor") + `<div class="srt-sponsors">${SPONSORS.map(card).join("")}</div>`
+      + stepHead(3, "Choose your skill") + '<div class="srt-note">A &#9733; marks a skill your chosen sponsor likes. Any skill you haven\'t used this lap works.</div>' + tiles(menu.choices);
   } else {
     const showLines = menu.lines && menu.type !== "battle" && menu.type !== "lane";
     const word = menu.type === "battle" ? "Choose your battle action" : menu.type === "lane" ? "Choose your lane" : "Choose your approach";
@@ -493,10 +536,21 @@ export function buildDialogHtml(state, pcId, menu, { mods = {}, targets = [], ke
     ? `<div class="srt-help"><label>Target <select name="target"><option value="">No target</option>${targets.map((t) => `<option value="${t.id}">${esc(t.name)} (${t.total} VP)</option>`).join("")}</select></label>${targets.length ? "" : '<span class="srt-note">No rival is within 2 VP right now.</span>'}</div>` : "";
   const favor = state.favor?.party ?? 0;
   const left = 2 - (state.favor?.spent ?? 0);
-  const drakeNote = (state.drake?.[pcId] ?? 0) ? ` Your drake is ${DRAKE_STATES[state.drake[pcId]]}.` : "";
+  const rung = state.drake?.[pcId] ?? 0;
+  const help = state.bench?.help?.[pcId] ?? {};
+  const helpBits = [];
+  if (help.bonus) helpBits.push(`+${help.bonus} circumstance`);
+  if (help.ignoreDrake) helpBits.push("drake penalty ignored");
+  if (help.cancelStrike) helpBits.push("one Narrows strike cancelled");
+  if (rung < 0) helpBits.push("+1 circumstance from your Surging drake");
+  const benchLine = helpBits.length ? `<span class="srt-benchline">Bench help this section: <b>${esc(helpBits.join(", "))}</b></span>` : `<span class="srt-benchline none">No bench help this section yet.</span>`;
+  const drakeNote = rung !== 0 ? ` Your drake is ${drakeName(rung)}.` : "";
+  const canBurn = rung <= 0;
+  const burnHtml = `<label class="spend burn"><input type="checkbox" name="burn" ${L0 ? (L0.burn ? "checked disabled" : "disabled") : (canBurn ? "" : "disabled")}> Burn the drake: +2 on this roll, but it drops a rung <small>(not in the Narrows; Fresh or Surging only)</small></label>`;
   const helpHtml = `<div class="srt-help">`
-    + `<label>Bench help <select name="bench" ${L0 ? "disabled" : ""}>${[0, 1, 2].map((n) => `<option value="${n}" ${L0 && (L0.bench ?? 0) === n ? "selected" : ""}>${n ? "+" + n : "None"}</option>`).join("")}</select></label>`
+    + `${benchLine}`
     + `<label class="spend"><input type="checkbox" name="spendFavor" ${L0 ? (L0.spendFavor ? "checked disabled" : "disabled") : (favor < 1 || left < 1 ? "disabled" : "")}> Spend 1 Favor for +1 ${L0 ? "" : `<small>(party has ${favor}; ${Math.max(0, left)} left this lap)</small>`}</label>`
+    + burnHtml
     + `<span class="srt-note">The party's +2 is added automatically.${drakeNote}</span></div>`;
 
   let resultHtml = "";
@@ -529,8 +583,10 @@ export function readDialogForm(fd) {
     choiceId: narrows ? fd.get("narrowsChoice") : fd.get("choice"),
     lineId: narrows ? undefined : (fd.get("line") || undefined),
     target: fd.get("target") || undefined,
+    sponsor: fd.get("sponsor") || undefined,
     bench: Number(fd.get("bench") || 0),
     spendFavor: fd.get("spendFavor") === "on",
+    burn: fd.get("burn") === "on",
     narrows: narrows ? fd.getAll("narrows") : [],
   };
 }

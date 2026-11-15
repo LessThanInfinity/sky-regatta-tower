@@ -34,7 +34,8 @@
     {{#each riders}}
     <div class="srt-used">
       <span class="who">{{name}}</span>
-      <span class="drake d{{drakeRung}}">Drake: {{drake}}</span>
+      <span class="drake {{drakeClass}}">Drake: {{drake}}</span>
+      {{#if pit}}<span class="srt-pit">boxing</span>{{/if}}{{#if benchHelp}}<span class="srt-pit">bench {{benchHelp}}</span>{{/if}}
       <span class="chips">
         {{#if noneUsed}}<span class="none">nothing used yet</span>{{else}}{{#each used}}<span class="chip"><s>{{this}}</s></span>{{/each}}{{/if}}
       </span>
@@ -42,7 +43,13 @@
     </div>
     {{/each}}
     <div class="srt-line">Party Favor <b>{{status.favor}}</b> <i>({{status.favorSpent}}/2 spent this lap)</i></div>
+    {{#if benchActs.length}}
+    <div class="srt-bench-status">
+      {{#each benchActs}}<div class="act"><span class="who">{{who}}</span> {{text}} <span class="rolled-badge {{degreeClass}}">{{degree}}</span> <i>{{notes}}</i></div>{{/each}}
+    </div>
+    {{/if}}
     {{#if canRoll}}<button type="button" class="srt-rollcheck" data-action="rollCheck"><i class="fa-solid fa-dice-d20"></i> Roll my check</button>{{/if}}
+    {{#if canBench}}<button type="button" class="srt-rollcheck srt-benchbtn" data-action="benchAct"><i class="fa-solid fa-people-group"></i> Bench action</button>{{/if}}
   </div>
   {{/if}}
 
@@ -63,7 +70,7 @@
           <span class="srt-equals">adding</span>
           <span class="srt-newtotal">= <b data-total-for="{{id}}">{{newTotal}}</b> VP</span>
         </span>
-        <span class="srt-hint" data-hint-for="{{id}}">allowed {{min}} to {{max}} this section</span>
+        <span class="srt-hint" data-hint-for="{{id}}">allowed {{min}} to {{max}} this section{{#if pit}} (includes the -1 VP pit stop){{/if}}</span>
         {{#if hasPending}}
         <span class="srt-rolled">{{rolledText}}
           {{#if showSuggest}}<button type="button" class="srt-link srt-use" data-action="useSuggested" data-for="gain_{{id}}" data-value="{{suggested}}">use {{suggestedText}}</button>{{/if}}
@@ -109,6 +116,9 @@
           <button type="button" class="srt-step-btn" data-action="favor" data-dir="1">+</button></div>
       </div>
     </details>
+    {{#if benchActs.length}}
+    <div class="srt-bench-status">Bench actions: {{#each benchActs}}<span>{{who}} <button type="button" class="srt-link" data-action="clearBench" data-bench="{{id}}">clear</button></span> {{/each}}</div>
+    {{/if}}
     <label class="srt-unlock"><input type="checkbox" name="unlock"> Unlock limits (allowed this section: {{limitText}})</label>
     {{/unless}}
     <div class="srt-buttons srt-two">

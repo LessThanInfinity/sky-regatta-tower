@@ -248,3 +248,32 @@
 .srt-dialog .srt-hero .chip input:checked + span { background: #d9a400; color: #000; font-weight: 700; }
 .srt-dialog .srt-hero.used { border-color: rgba(128, 128, 140, 0.5); background: rgba(128, 128, 140, 0.1); }
 .srt-card .hero { margin-top: 4px; font-size: 0.78rem; font-weight: 600; color: #b37d00; }
+
+/* Sponsors' Rings */
+.srt-dialog .srt-opt .star { display: none; color: #ffc107; margin-left: 2px; }
+.srt-dialog .srt-sponsors { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.srt-dialog .srt-sponsor-card .card { padding: 5px 8px; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; background: rgba(128, 128, 140, 0.10); }
+.srt-dialog .srt-sponsor-card .head b { font-size: 0.82rem; line-height: 1.15; }
+.srt-dialog .srt-sponsor-card .tag { font-size: 0.66rem; opacity: 0.75; line-height: 1.2; }
+.srt-dialog .srt-sponsor-card .txt { font-size: 0.68rem; color: #ffd37a; }
+
+/* Bench dialog and pit status */
+.srt-dialog .srt-skillset { display: none; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 0.8rem; }
+.srt-dialog .srt-skillset .chip { cursor: pointer; }
+.srt-dialog .srt-skillset .chip input { position: absolute; opacity: 0; pointer-events: none; }
+.srt-dialog .srt-skillset .chip span { display: inline-block; padding: 1px 8px; border: 1px solid rgba(128, 128, 140, 0.5); border-radius: 12px; }
+.srt-dialog .srt-skillset .chip input:checked + span { background: #e10600; border-color: #e10600; color: #fff; }
+.srt-dialog .srt-sponsors.srt-two { grid-template-columns: repeat(2, 1fr); }
+.srt-dialog .srt-bench .srt-opt .right b { color: #7fd4ff; }
+.srt-dialog .srt-benchline { flex-basis: 100%; font-size: 0.8rem; }
+.srt-dialog .srt-benchline.none { opacity: 0.65; }
+.srt-dialog .srt-help .burn { flex-basis: 100%; }
+.sky-regatta .srt-used .drake.dS { background: #12456b; color: #8fd8ff; }
+.sky-regatta .srt-bench-status { margin-top: 6px; font-size: 0.74rem; }
+.sky-regatta .srt-bench-status .act { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; margin: 2px 0; }
+.sky-regatta .srt-bench-status .who { font-weight: 700; color: #7fd4ff; }
+.sky-regatta .srt-pit { font-size: 0.66rem; padding: 0 5px; border-radius: 3px; background: #4a2a5a; color: #e6b3ff; }
+
+.srt-card .srt-card-btn2 { background: #12456b; border-color: #2f8fd0; margin-top: 4px; }
+.srt-card .srt-card-btn2:hover { background: #1a5d8e; }
+.sky-regatta .srt-benchbtn { background: #12456b; border-color: #2f8fd0; margin-top: 6px; }

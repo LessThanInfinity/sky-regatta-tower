@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { freshState, resolveSection, ROSTER } from "../scripts/engine.mjs";
 import {
   degreeOf, lineVp, sectionMenu, validatePcRequest, applyPcCheck, applyNarrows, clearPcRoll, computeMod, eligibleTargets,
-  planNpcDice, positionTarget, readDialogForm, rerollPcRoll, buildDialogHtml, buildDcCardHtml, buildNpcDiceHtml, buildPcRollHtml, LINES,
+  planNpcDice, positionTarget, readDialogForm, rerollPcRoll, SPONSORS, buildDialogHtml, buildDcCardHtml, buildNpcDiceHtml, buildPcRollHtml, LINES,
 } from "../scripts/rolls.mjs";
 
 const d6 = async () => 1 + Math.floor(Math.random() * 6);
@@ -102,7 +102,7 @@ test("clearing a roll reverses Favor and drake changes too", () => {
   s.favor.party = 2;
   const before = JSON.stringify({ f: s.favor, d: s.drake, i: s.influence, u: s.used, b: s.bonus });
   s.lap = 4; s.sec = 1;                                                                      // Rings
-  applyPcCheck(s, { pcId: "violet", choiceId: "qiu-may-s-silk-smooth:nature", lineId: "risky", spendFavor: true }, roll(20, 20));   // nat 20 -> crit
+  applyPcCheck(s, { pcId: "violet", choiceId: "sponsors-rings:nature", sponsor: "qiu", lineId: "risky", spendFavor: true }, roll(20, 20));   // nat 20 -> crit
   assert.equal(s.favor.party, 1);
   clearPcRoll(s, "violet");
   assert.equal(JSON.stringify({ f: s.favor, d: s.drake, i: s.influence, u: s.used, b: s.bonus }), before);
@@ -444,4 +444,45 @@ test("Hero Point reroll in the Narrows rerolls one chosen die", () => {
 test("a reroll with nothing to reroll, or a bad pick, changes nothing", () => {
   const s = freshState();
   assert.equal(rerollPcRoll(s, "violet", 10).ok, false);
+});
+
+test("Sponsors' Rings: any sponsor with any unused skill; the sponsor is required, recorded and noted", () => {
+  const s = freshState();
+  s.lap = 4; s.sec = 1;
+  const menu = sectionMenu(4, "B");
+  assert.equal(menu.type, "rings");
+  assert.equal(menu.choices.length, 7);
+  assert.ok(SPONSORS.length >= 2);
+  const base = { pcId: "violet", choiceId: "sponsors-rings:survival", lineId: "standard" };
+  assert.equal(validatePcRequest(s, base).ok, false, "a sponsor is required");
+  assert.equal(validatePcRequest(s, { ...base, sponsor: "nobody" }).ok, false);
+  const res = applyPcCheck(s, { ...base, sponsor: "hida" }, roll(15, 20), { autoVp: true });
+  assert.ok(res.ok, res.error);
+  assert.equal(s.pending.violet.sponsor, "hida");
+  assert.equal(s.pending.violet.sponsorFavored, false, "Survival is not one of Hida's skills");
+  assert.ok(s.pending.violet.notes.some((n) => /Kaso Hida/.test(n)));
+  const s2 = freshState(); s2.lap = 4; s2.sec = 1;
+  applyPcCheck(s2, { pcId: "aji", choiceId: "sponsors-rings:athletics", lineId: "standard", sponsor: "hida" }, roll(15, 20), { autoVp: true });
+  assert.equal(s2.pending.aji.sponsorFavored, true);
+  assert.ok(s2.pending.aji.notes.some((n) => /★/.test(n)));
+  assert.equal(validatePcRequest(s, { ...base, sponsor: "qiu" }).ok, false, "Survival is used up for Violet this lap");
+});
+
+test("Rings dialog shows the line, sponsor cards and skill tiles, and the form reader passes the sponsor", () => {
+  const html = buildDialogHtml(freshState(), "violet", sectionMenu(4, "B"), { mods: {}, targets: [], key: "B" });
+  assert.equal((html.match(/<input type="radio" name="sponsor"/g) ?? []).length, SPONSORS.length);
+  assert.equal((html.match(/name="choice"/g) ?? []).length, 7);
+  assert.match(html, /name="line"/);
+  assert.match(html, /fav-qiu/);
+  const fd = { get: (k) => ({ choice: "sponsors-rings:nature", line: "safe", sponsor: "qiu" })[k] ?? null, getAll: () => [] };
+  assert.equal(readDialogForm(fd).sponsor, "qiu");
+});
+
+test("a Hero Point reroll keeps the sponsor", () => {
+  const s = freshState(); s.lap = 4; s.sec = 1;
+  applyPcCheck(s, { pcId: "violet", choiceId: "sponsors-rings:nature", lineId: "standard", sponsor: "qiu" }, roll(3, 20), { autoVp: true });
+  const r = rerollPcRoll(s, "violet", 18);
+  assert.ok(r.ok, r.error);
+  assert.equal(s.pending.violet.sponsor, "qiu");
+  assert.equal(s.pending.violet.heroUsed, true);
 });

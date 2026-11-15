@@ -5,9 +5,10 @@
  * to make their rolls over the module socket, so there is one source of truth and nothing to trust.
  */
 import {
-  ROSTER, SECTIONS, freshState, normalizeState, resolveSection, undo as undoState, nextSection, isFinished, buildReport,
+  ROSTER, BENCH, SECTIONS, freshState, normalizeState, resolveSection, undo as undoState, nextSection, isFinished, buildReport,
 } from "./engine.mjs";
 import { towerContext, validateInput, readoutFor } from "./view.mjs";
+import { validateBenchRequest, applyBenchAction, clearBenchAct, buildBenchDialogHtml, buildBenchCardHtml, readBenchForm, benchMod } from "./bench.mjs";
 import { captureTops, playSlides } from "./animate.mjs";
 import { captureDraft, applyDraft } from "./draft.mjs";
 import {
@@ -29,7 +30,7 @@ const getState = () => {
   return s && s.version ? normalizeState(foundry.utils.deepClone(s)) : null;
 };
 const saveState = (state) => game.settings.set(MODULE_ID, "state", state);
-const opts = () => ({ npcFouls: game.settings.get(MODULE_ID, "npcFouls") });
+const opts = () => ({ npcFouls: game.settings.get(MODULE_ID, "npcFouls"), npcBench: game.settings.get(MODULE_ID, "npcBench") });
 const autoVp = () => game.settings.get(MODULE_ID, "autoVp");
 const d6 = async () => (await new Roll("1d6").evaluate()).total;
 const isActiveGM = () => game.user.isGM && game.users.activeGM?.id === game.user.id;
@@ -50,6 +51,14 @@ function skillMod(entry, skill) {
   if (a) m = skill === "perception" ? (a.perception?.mod ?? a.system?.perception?.mod) : (a.skills?.[skill]?.mod ?? a.system?.skills?.[skill]?.mod);
   return Number.isFinite(m) ? m : (entry.skills?.[skill] ?? 0);
 }
+/** The bench members this user may act for (the GM may act for both). */
+function benchFor(user) {
+  return BENCH.filter((b) => {
+    const a = actorFor(b);
+    return user.isGM || (a && a.testUserPermission(user, "OWNER"));
+  });
+}
+
 /** Hero Points on the rider's PF2e actor (0 if there is no actor or the system doesn't have them). */
 function heroPointsOf(entry) {
   const a = actorFor(entry);
@@ -232,6 +241,77 @@ async function executeReroll(req, userId) {
   await ChatMessage.create({ speaker, whisper: gmIds(), rolls: [roll], sound: CONFIG.sounds.dice, content });
 }
 
+/** Runs on the active GM's client: roll the bench member's check, store the result, post the card. */
+function queueBench(request, userId) {
+  queue = queue.then(() => executeBench(request, userId)).catch((err) => { console.error(`${MODULE_ID} | bench action failed`, err); reject(userId, "Something went wrong with that bench action. Tell the GM."); });
+}
+async function executeBench(req, userId) {
+  const state = getState() ?? freshState();
+  const user = game.users.get(userId);
+  const member = BENCH.find((b) => b.id === req.benchId);
+  const actor = member ? actorFor(member) : null;
+  if (!user || !member) return reject(userId, "That bench member isn't on the team.");
+  if (!user.isGM && !(actor && actor.testUserPermission(user, "OWNER"))) return reject(userId, `You don't control ${member.name}.`);
+  const v = validateBenchRequest(state, req);
+  if (!v.ok) return reject(userId, v.error);
+  const mod = benchMod(skillMod(member, v.skill));
+  const roll = await new Roll("1d20").evaluate();
+  const res = applyBenchAction(state, req, { nat: roll.total, mod, parts: [{ label: "skill", value: mod - 2 }, { label: "party", value: 2 }] });
+  if (!res.ok) return reject(userId, res.error);
+  await saveState(state);
+  await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor }), whisper: gmIds(), rolls: [roll], sound: CONFIG.sounds.dice, content: buildBenchCardHtml(res.act) });
+}
+
+/** The bench member's action picker. */
+async function openBenchDialog() {
+  const state = getState() ?? freshState();
+  if (isFinished(state)) return ui.notifications.warn("The race is finished.");
+  const mine = benchFor(game.user);
+  if (!mine.length) return ui.notifications.warn("You don't control Reta or Rowan, so there is no bench action for you.");
+  let member = mine[0];
+  if (mine.length > 1) {
+    const picked = await DialogV2.wait({
+      window: { title: "Act for which bench member?" }, content: "<p>Who is helping?</p>", rejectClose: false,
+      buttons: mine.map((b, i) => ({ action: b.id, label: b.name, default: i === 0 })),
+    });
+    member = mine.find((b) => b.id === picked);
+    if (!member) return;
+  }
+  const mods = Object.fromEntries(Object.keys(SKILL_LABEL).map((s) => [s, skillMod(member, s)]));
+  const done = state.bench?.acts?.[member.id];
+  if (done) {
+    await DialogV2.wait({
+      window: { title: `${member.name}: bench action` }, position: { width: 540 }, rejectClose: false,
+      content: buildBenchDialogHtml(state, member.id, { mods, locked: done }),
+      buttons: [{ action: "close", label: "Close", icon: "fa-solid fa-xmark", default: true }],
+    });
+    return;
+  }
+  const result = await DialogV2.wait({
+    window: { title: `${member.name}: bench action` }, position: { width: 540 }, rejectClose: false,
+    content: buildBenchDialogHtml(state, member.id, { mods }),
+    buttons: [
+      { action: "go", label: "Roll!", icon: "fa-solid fa-dice-d20", default: true, callback: (event, button) => readBenchForm(new FormData(button.form)) },
+      { action: "cancel", label: "Cancel" },
+    ],
+  });
+  if (!result || typeof result !== "object") return;
+  const request = { benchId: member.id, ...result };
+  const check = validateBenchRequest(state, request);
+  if (!check.ok) return ui.notifications.warn(check.error);
+  if (game.user.isGM) {
+    if (!isActiveGM()) return ui.notifications.warn("Another GM is the active one; ask them to roll.");
+    queueBench(request, game.user.id);
+  } else game.socket.emit(CHANNEL, { type: "bench", userId: game.user.id, request });
+}
+
+async function clearBench(benchId) {
+  if (!game.user.isGM) return;
+  const state = getState();
+  if (!state || !clearBenchAct(state, benchId)) return;
+  await saveState(state);
+}
+
 /** The skill picker a player sees after clicking "Roll my check". */
 async function openRollDialog(where = {}) {
   const state = getState() ?? freshState();
@@ -312,7 +392,7 @@ async function clearRoll(pcId) {
 async function adjustDrake(pcId, dir) {
   if (!game.user.isGM) return;
   const state = getState() ?? freshState();
-  state.drake[pcId] = Math.min(3, Math.max(0, (state.drake[pcId] ?? 0) + dir));
+  state.drake[pcId] = Math.min(3, Math.max(-1, (state.drake[pcId] ?? 0) + dir));
   await saveState(state);
 }
 async function adjustFavor(dir) {
@@ -352,6 +432,8 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
       show: SkyRegattaTower.#onShow,
       postDcs: SkyRegattaTower.#onPostDcs,
       rollCheck: SkyRegattaTower.#onRollCheck,
+      benchAct: SkyRegattaTower.#onBenchAct,
+      clearBench: SkyRegattaTower.#onClearBench,
       useSuggested: SkyRegattaTower.#onUseSuggested,
       clearRoll: SkyRegattaTower.#onClearRoll,
       drake: SkyRegattaTower.#onDrake,
@@ -373,6 +455,7 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
     return towerContext(state, {
       isGM: game.user.isGM,
       canRoll: ridersFor(game.user).length > 0,
+      canBench: benchFor(game.user).length > 0,
       portraitFor: showPortraits ? (r) => game.actors.getName(r.actor)?.img ?? null : null,
     });
   }
@@ -430,6 +513,8 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
   static async #onShow() { await showToPlayers(); }
   static async #onPostDcs() { await postDcCard(); }
   static async #onRollCheck() { await openRollDialog(); }
+  static async #onBenchAct() { await openBenchDialog(); }
+  static async #onClearBench(event, target) { await clearBench(target.dataset.bench); }
   static #onUseSuggested(event, target) {
     const input = this.element.querySelector(`input[name="${target.dataset.for}"]`);
     if (!input) return;
@@ -492,6 +577,11 @@ Hooks.once("init", () => {
     hint: "On: players see the dice (and Dice So Nice animates them). Off (default): only the GM sees them.",
     scope: "world", config: true, type: Boolean, default: false,
   });
+  game.settings.register(MODULE_ID, "npcBench", {
+    name: "NPC bench strength",
+    hint: "Each NPC rider's team has a bench too: this is the chance, each lap, that it gives them +1 on the lap roll. 0.5 keeps the party around 20 to 35 percent depending on how well they use their own bench.",
+    scope: "world", config: true, type: Number, default: 0.5, range: { min: 0, max: 1, step: 0.05 },
+  });
   game.settings.register(MODULE_ID, "npcFouls", {
     name: "NPC fouls",
     hint: "An NPC attack roll of 1 is a foul: -1 VP.",
@@ -506,12 +596,14 @@ Hooks.once("ready", () => {
     show: showToPlayers,
     postDcs: postDcCard,
     rollCheck: openRollDialog,
+    bench: openBenchDialog,
     rollNext, undo: undoLast, reset: resetRace,
     getState,
   };
   game.socket.on(CHANNEL, (data) => {
     if (data?.type === "pcRoll") { if (isActiveGM()) queuePcRoll(data.request, data.userId); }
     else if (data?.type === "reroll") { if (isActiveGM()) queueReroll(data.request, data.userId); }
+    else if (data?.type === "bench") { if (isActiveGM()) queueBench(data.request, data.userId); }
     else if (data?.type === "reject" && data.userId === game.user.id) ui.notifications.warn(data.reason);
   });
 });
@@ -523,5 +615,8 @@ Hooks.on("renderChatMessageHTML", (message, html) => {
       ev.preventDefault();
       openRollDialog({ lap: Number(btn.dataset.lap), key: btn.dataset.key });
     });
+  });
+  html.querySelectorAll("[data-srt-action='bench']").forEach((btn) => {
+    btn.addEventListener("click", (ev) => { ev.preventDefault(); openBenchDialog(); });
   });
 });

@@ -6,10 +6,11 @@ import {
   standings, nextSection, isFinished, signed, sectionLimits, ADJ_LIMITS,
   normalizeState,
 } from "./engine.mjs";
-import { SKILL_LABEL, DRAKE_STATES, DEGREE_LABEL } from "./rolls.mjs";
+import { SKILL_LABEL, DEGREE_LABEL, drakeName } from "./rolls.mjs";
+import { benchAction } from "./bench.mjs";
 
 /** Everything the tower template needs. */
-export function towerContext(state, { isGM = false, portraitFor = null, canRoll = false } = {}) {
+export function towerContext(state, { isGM = false, portraitFor = null, canRoll = false, canBench = false } = {}) {
   normalizeState(state);
   const rows = standings(state.vp).map((r) => {
     const d = state.delta[r.id] ?? 0;
@@ -31,6 +32,8 @@ export function towerContext(state, { isGM = false, portraitFor = null, canRoll 
   const finished = isFinished(state);
   const nx = nextSection(state);
   const last = state.last;
+  const pitOf = (id) => state.bench?.pit?.[id]?.cost ?? 0;
+  const limOf = (id) => (nx ? sectionLimits(nx.lap, nx.key, { pit: pitOf(id) < 0 }) : null);
   const lim = nx ? sectionLimits(nx.lap, nx.key) : null;
   const limitText = lim ? `${signed(lim.min)} to ${signed(lim.max)}` : "";
 
@@ -39,20 +42,23 @@ export function towerContext(state, { isGM = false, portraitFor = null, canRoll 
     started: !!last,
     lapLabel: finished ? "FINISH" : `LAP ${Math.min(state.lap, 4)}/4`,
     subtitle: finished ? "Final standings"
-      : last ? `After section ${sectionNumber(last.lap, last.key)}/16 · Lap ${last.lap} ${last.key}, ${SECTION_NAME[last.key]}${last.key === "B" ? ` · ${OBSTACLE[last.lap]}` : ""}` : "On the grid",
+      : `Section ${sectionNumber(nx.lap, nx.key)}/16 · ${nx.key}, ${nx.name}${nx.key === "B" ? ` · ${OBSTACLE[nx.lap]}` : ""}`,
     nextLabel: nx ? `Section ${sectionNumber(nx.lap, nx.key)}/16 · Lap ${nx.lap} ${nx.key}, ${nx.name}${nx.key === "B" ? ` (${OBSTACLE[nx.lap]})` : ""}` : "Race over",
     isGM,
     showShelter: state.lap === 2,
     limitText,
     pcs: ROSTER.filter((r) => r.pc).map((r) => {
       const pend = state.pending[r.id];
-      const gain = pend?.vp ?? 0;
+      const pit = pitOf(r.id);
+      const gain = (pend?.vp ?? 0) + pit;      // a pit stop's cost is already in the stepper
+      const lm = limOf(r.id);
       return {
         id: r.id, name: r.name,
         base: state.vp[r.id],                 // total before this section
         gain, newTotal: state.vp[r.id] + gain,
-        min: lim ? lim.min : 0,               // allowed change this section
-        max: lim ? lim.max : 0,
+        min: lm ? lm.min : 0,                 // allowed change this section
+        max: lm ? lm.max : 0,
+        pit: pit < 0,
         sheltered: !!state.sheltered[r.id],
         rolledText: pend ? pend.summary : "",
         hasPending: !!pend,
@@ -66,13 +72,18 @@ export function towerContext(state, { isGM = false, portraitFor = null, canRoll 
     })),
     adjOpen: Object.values(state.pendingAdj).some((v) => v),
     canRoll,
+    canBench,
+    benchActs: Object.values(state.bench?.acts ?? {}).map((a) => ({ id: a.benchId, who: a.benchName, text: `${benchAction(a.action).name}${a.rider ? ` for ${ROSTER.find((r) => r.id === a.rider)?.name}` : ""}`, degree: DEGREE_LABEL[a.degree], degreeClass: a.degree, notes: a.notes.join(" · ") })),
     // shown to everyone at the bottom of the tower
     riders: ROSTER.filter((r) => r.pc).map((r) => ({
       id: r.id, name: r.name,
       used: (state.used[r.id] ?? []).map((sk) => SKILL_LABEL[sk] ?? sk),
       noneUsed: !(state.used[r.id] ?? []).length,
-      drake: DRAKE_STATES[state.drake[r.id] ?? 0],
+      drake: drakeName(state.drake[r.id] ?? 0),
       drakeRung: state.drake[r.id] ?? 0,
+      drakeClass: (state.drake[r.id] ?? 0) < 0 ? "dS" : `d${state.drake[r.id] ?? 0}`,
+      pit: pitOf(r.id) < 0,
+      benchHelp: (() => { const h = state.bench?.help?.[r.id]; if (!h) return ""; const bits = []; if (h.bonus) bits.push(`+${h.bonus}`); if (h.ignoreDrake) bits.push("calm drake"); return bits.join(", "); })(),
       rolled: !!state.pending[r.id],
       rolledLabel: rolledLabel(state.pending[r.id]),
       rolledClass: state.pending[r.id]?.degree ?? "",
@@ -92,8 +103,8 @@ export function validateInput(state, input, unlocked = false) {
   if (unlocked) return null;
   const nx = nextSection(state);
   if (!nx) return null;
-  const lim = sectionLimits(nx.lap, nx.key);
   for (const r of ROSTER.filter((x) => x.pc)) {
+    const lim = sectionLimits(nx.lap, nx.key, { pit: (state.bench?.pit?.[r.id]?.cost ?? 0) < 0 });
     const v = input[r.id];
     if (v === undefined || v === null || v === "" || Number.isNaN(Number(v))) continue;
     const change = Number(v) - state.vp[r.id];

@@ -24,6 +24,11 @@ export const ROSTER = [
   { id: "sarah",    code: "SAR", name: "Sarah",       team: "Flashpoint",        color: "#ff2e7e", rating: 0, tag: "showboat",   actor: "SARAH \"QUICKSHOT\"" , skills: { acrobatics: 30, athletics: 3, nature: 4, survival: 4, deception: 25, intimidation: 5, performance: 5, perception: 26, diplomacy: 5 } },
   { id: "dutch",    code: "DUT", name: "Dutch",       team: "Flashpoint",        color: "#ff2e7e", rating: 0, tag: "cautious",   actor: "DUTCH CARVER" , skills: { acrobatics: 28, athletics: 24, nature: 4, survival: 4, deception: 27, intimidation: 4, performance: 4, perception: 26, diplomacy: 24 } },
 ];
+/** The two party members who stay on the bench (their skill numbers are fallbacks; the module reads the PF2e actor first). */
+export const BENCH = [
+  { id: "reta", name: "Reta", actor: "Reta kiri Osen", skills: { perception: 18, acrobatics: 22, athletics: 25, crafting: 17, diplomacy: 19, intimidation: 19, medicine: 0, nature: 0, performance: 23, society: 17, survival: 0, deception: 3 } },
+  { id: "rowan", name: "Rowan", actor: "Rowan, the Unclaimed", skills: { perception: 22, acrobatics: 16, athletics: 0, crafting: 22, diplomacy: 23, intimidation: 5, medicine: 4, nature: 20, performance: 5, society: 19, survival: 4, deception: 21 } },
+];
 const NPCS = ROSTER.filter((r) => !r.pc);
 const PCS = ROSTER.filter((r) => r.pc);
 // ----------------------------
@@ -46,17 +51,22 @@ export function freshState() {
     pending: {},      // each PC's roll for the section being played: { violet: { vp, skill, degree, ... } }
     pendingAdj: {},   // VP changes queued for NPCs by PC actions (for example a Bump), applied on the next roll
     used: { violet: [], aji: [] },     // skills each PC has used for a line roll this lap (no repeats)
-    drake: { violet: 0, aji: 0 },      // drake condition: 0 Fresh, 1 Winded, 2 Strained, 3 Spent
+    drake: { violet: 0, aji: 0 },      // drake condition: -1 Surging, 0 Fresh, 1 Winded, 2 Strained, 3 Spent
     influence: { qiu: 0, hida: 0 },    // Influence Points with the sponsors
     bonus: { violet: 0, aji: 0 },      // circumstance bonus carried to the next Obstacle roll
     last: null,       // { lap, key } of the section just resolved
     prevRank: null,   // rank of every rider before the last section (null when everyone was level)
+    bench: { acts: {}, help: {}, pit: {}, pitLap: {} },   // bench actions this section, the help they gave, pit stops, and the lap of each rider's last stop
     history: [],
   };
 }
 
 /** How much a PC's total may change in one section (from the rules in the plan). */
-export function sectionLimits(lap, key) {
+export function sectionLimits(lap, key, opts = {}) {
+  const base = baseLimits(lap, key);
+  return opts.pit ? { min: base.min - 1, max: base.max } : base;      // a pit stop costs 1 VP on top
+}
+function baseLimits(lap, key) {
   switch (key) {
     case "A": return { min: -2, max: 4 };                    // best: Risky crit +4. -2 covers a crit fail plus a failed pit swap
     case "B": return lap === 2 ? { min: -1, max: 6 }         // Narrows: three checks, +2 each on a crit
@@ -71,6 +81,8 @@ export const ADJ_LIMITS = { min: -3, max: 3 };               // GM adjustment to
 export function normalizeState(state) {
   const f = freshState();
   for (const k of ["pending", "pendingAdj", "used", "drake", "influence", "bonus"]) state[k] ??= clone(f[k]);
+  state.bench ??= clone(f.bench);
+  for (const k of ["acts", "help", "pit", "pitLap"]) state.bench[k] ??= {};
   state.favor ??= {};
   for (const k of ["flashpoint", "party", "spent"]) state.favor[k] ??= 0;
   return state;
@@ -117,10 +129,11 @@ export async function resolveSection(state, input, d6, opts = {}) {
     const pr = state.pending[p.id];
     if (pr) extra.push(`<b>${esc(p.name)}</b> rolled: ${esc(pr.summary ?? "")}`);
   }
+  for (const a of Object.values(state.bench.acts)) extra.push(`<b>${esc(a.benchName)}</b> (bench): ${esc(a.summary)}`);
   for (const pc of PCS) {
     const v = input[pc.id];
     // No total typed in: use the PC's saved total plus whatever they rolled.
-    state.vp[pc.id] = v === undefined || v === null || v === "" ? state.vp[pc.id] + (state.pending[pc.id]?.vp ?? 0) : Number(v) || 0;
+    state.vp[pc.id] = v === undefined || v === null || v === "" ? state.vp[pc.id] + (state.pending[pc.id]?.vp ?? 0) + (state.bench.pit[pc.id]?.cost ?? 0) : Number(v) || 0;
     const sh = input[`${pc.id}Sheltered`];
     if (sh !== undefined) state.sheltered[pc.id] = !!sh;
   }
@@ -143,6 +156,8 @@ export async function resolveSection(state, input, d6, opts = {}) {
         mod += hot;
         if (hot) modText += ` ${signed(hot)} Hothead (${hot > 0 ? "behind" : "ahead"})`;
       }
+      // the NPC team's bench: with probability opts.npcBench each lap, +1 on the lap roll
+      if ((opts.npcBench ?? 0) > 0 && (opts.rand ?? Math.random)() < opts.npcBench) { mod += 1; modText += " +1 bench"; }
       const raw = await d6();
       const eff = clamp16(raw + mod);
       const T = LAP_TABLE[eff];
@@ -240,10 +255,12 @@ export async function resolveSection(state, input, d6, opts = {}) {
   const finished = lap === 4 && key === "D";
   state.pending = {};
   state.pendingAdj = {};
+  state.bench.acts = {}; state.bench.help = {}; state.bench.pit = {};
   if (state.sec === 3) {
     state.sec = 0; state.lap += 1;
     state.used = { violet: [], aji: [] };      // the no-repeat rule is per lap
     state.favor.spent = 0;
+    for (const id of Object.keys(state.drake)) if (state.drake[id] < 0) state.drake[id] = 0;     // Surging lasts until the next lap
   } else state.sec += 1;
   return { lap, key, before, notes, extra, finished };
 }

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Sky Regatta Standings: preview</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="../styles/regatta-0.4.5.css">
+<link rel="stylesheet" href="../styles/regatta-0.4.6.css">
 <style>
   body { margin: 0; background: #2a2a2e; font-family: system-ui, sans-serif; color: #ddd; }
   .stage { display: flex; gap: 20px; padding: 16px; flex-wrap: wrap; align-items: flex-start; }
@@ -30,7 +30,7 @@
   </div>
   <div>
     <div class="win sky-regatta"><div class="win-title">Sky Regatta (player view) &mdash; playing as
-      <select id="as"><option value="violet">Violet</option><option value="aji">Aji</option></select></div>
+      <select id="as"><option value="violet">Violet</option><option value="aji">Aji</option></select> &middot; bench as <select id="asBench"><option value="reta">Reta</option><option value="rowan">Rowan</option></select></div>
       <div class="window-content" id="player"></div></div>
   </div>
   <div>
@@ -45,7 +45,8 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/handlebars.js/4.7.8/handlebars.min.js"></script>
 <script type="module">
-import { ROSTER, SECTIONS, freshState, resolveSection, undo, buildReport } from "../scripts/engine.mjs";
+import { ROSTER, BENCH, SECTIONS, freshState, resolveSection, undo, buildReport } from "../scripts/engine.mjs";
+import { validateBenchRequest, applyBenchAction, clearBenchAct, buildBenchDialogHtml, buildBenchCardHtml, readBenchForm, benchMod } from "../scripts/bench.mjs";
 import { towerContext, validateInput, readoutFor } from "../scripts/view.mjs";
 import { captureTops, playSlides } from "../scripts/animate.mjs";
 import { captureDraft, applyDraft } from "../scripts/draft.mjs";
@@ -61,15 +62,15 @@ const d20 = () => 1 + Math.floor(Math.random() * 20);
 const gm = document.getElementById("gm"), player = document.getElementById("player"), chat = document.getElementById("chat"), warn = document.getElementById("warn");
 const unlocked = () => !!gm.querySelector("input[name='unlock']")?.checked;
 const say = (html, who = "", gmOnly = false) => { chat.insertAdjacentHTML("afterbegin", `<div class="msg ${gmOnly ? "gm" : ""}"><div class="who">${who}${gmOnly ? " (whisper to GM)" : ""}</div>${html}</div>`); };
-const entry = (id) => ROSTER.find((r) => r.id === id);
+const entry = (id) => ROSTER.find((r) => r.id === id) ?? BENCH.find((r) => r.id === id);
 const skillMod = (e, sk) => e.skills?.[sk] ?? 0;
 
 let sectionKey = null;
 function render() {
   const prevGm = captureTops(gm), prevPlayer = captureTops(player);
   const draft = captureDraft(gm, sectionKey);          // keep what the GM typed if only a player's roll changed
-  gm.innerHTML = tpl(towerContext(state, { isGM: true, canRoll: true }));
-  player.innerHTML = tpl(towerContext(state, { isGM: false, canRoll: true }));
+  gm.innerHTML = tpl(towerContext(state, { isGM: true, canRoll: true, canBench: true }));
+  player.innerHTML = tpl(towerContext(state, { isGM: false, canRoll: true, canBench: true }));
   window.__slides = playSlides(player, prevPlayer) + playSlides(gm, prevGm);
   for (const input of gm.querySelectorAll("input[data-kind='pc']")) input.addEventListener("input", () => updateReadout(input));
   const key = `${state.lap}-${state.sec}`;
@@ -158,8 +159,36 @@ async function rollDialog() {
   render();
 }
 
+// ---- bench dialog ----
+async function benchDialog() {
+  const id = document.getElementById("asBench").value, member = entry(id);
+  const mods = Object.fromEntries(Object.keys(SKILL_LABEL).map((sk) => [sk, skillMod(member, sk)]));
+  const done = state.bench.acts[id];
+  document.getElementById("dlgbody").innerHTML = `<h3 style="margin:0 0 6px 0">${member.name}: bench action</h3>` + buildBenchDialogHtml(state, id, { mods, locked: done ?? null });
+  const dlg = document.getElementById("dlg");
+  dlg.showModal();
+  const rollBtn = document.getElementById("dlgRoll");
+  rollBtn.textContent = done ? "Close" : "Roll!";
+  const result = await new Promise((resolve) => {
+    document.getElementById("dlgCancel").onclick = () => { dlg.close(); resolve(null); };
+    rollBtn.onclick = () => { const r = done ? null : readBenchForm(new FormData(dlg.querySelector("form"))); dlg.close(); resolve(r); };
+  });
+  rollBtn.textContent = "Roll!";
+  if (!result) return;
+  const request = { benchId: id, ...result };
+  const v = validateBenchRequest(state, request);
+  if (!v.ok) { warn.textContent = v.error; return; }
+  const mod = benchMod(skillMod(member, v.skill));
+  const nat = window.__benchNat ?? d20();
+  const res = applyBenchAction(state, request, { nat, mod, parts: [{ label: "skill", value: mod - 2 }, { label: "party", value: 2 }] });
+  if (!res.ok) { warn.textContent = res.error; return; }
+  say(buildBenchCardHtml(res.act), member.name, true);
+  render();
+}
+
 // ---- clicks ----
 function onClick(ev) {
+  if (ev.target.closest("[data-srt-action='bench']")) { benchDialog(); return; }
   const dcBtn = ev.target.closest("[data-srt-action='roll']");
   if (dcBtn) { rollDialog(); return; }
   const btn = ev.target.closest("button[data-action]");
@@ -175,6 +204,8 @@ function onClick(ev) {
     const input = gm.querySelector(`input[name="${btn.dataset.for}"]`);
     input.value = Number(btn.dataset.value); input.dispatchEvent(new Event("input", { bubbles: true }));
   } else if (action === "rollCheck") rollDialog();
+  else if (action === "benchAct") benchDialog();
+  else if (action === "clearBench") { clearBenchAct(state, btn.dataset.bench); render(); }
   else if (action === "postDcs") { say(buildDcCardHtml(state, state.lap, SECTIONS[state.sec]), "Sky Regatta"); }
   else if (action === "clearRoll") { clearPcRoll(state, btn.dataset.pc); render(); }
   else if (action === "drake") { state.drake[btn.dataset.pc] = Math.min(3, Math.max(0, state.drake[btn.dataset.pc] + Number(btn.dataset.dir))); render(); }
@@ -201,7 +232,7 @@ async function doRoll() {
 gm.addEventListener("click", onClick);
 player.addEventListener("click", onClick);
 chat.addEventListener("click", onClick);
-window.__api = { state: () => state, rollDialog, doRoll, render };
+window.__api = { state: () => state, rollDialog, benchDialog, doRoll, render };
 render();
 </script>
 </body>

@@ -173,3 +173,16 @@ test("NPCs never attack their own teammates", async () => {
     }
   }
 });
+
+test("NPC bench: with chance 1 every NPC gets +1 on the lap roll and it is noted; with 0 nobody does", async () => {
+  const plain = freshState();
+  await resolveSection(plain, {}, async () => 3, {});
+  const benched = freshState();
+  await resolveSection(benched, {}, async () => 3, { npcBench: 1 });
+  const nonHot = ROSTER.filter((r) => !r.pc && r.tag !== "hothead");
+  for (const n of nonHot) assert.ok(benched.lapRolls[n.id].eff >= plain.lapRolls[n.id].eff, n.name);
+  assert.ok(nonHot.some((n) => benched.lapRolls[n.id].eff > plain.lapRolls[n.id].eff));
+  const noBench = freshState();
+  await resolveSection(noBench, {}, async () => 3, { npcBench: 0 });
+  assert.deepEqual(noBench.lapRolls, plain.lapRolls);
+});

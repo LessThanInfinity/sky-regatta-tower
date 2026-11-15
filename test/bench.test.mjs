@@ -1,0 +1,141 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { freshState, resolveSection, sectionLimits } from "../scripts/engine.mjs";
+import { applyPcCheck, applyNarrows, computeMod, validatePcRequest } from "../scripts/rolls.mjs";
+import { validateBenchRequest, applyBenchAction, clearBenchAct, buildBenchDialogHtml, buildBenchCardHtml, readBenchForm, benchMod, PIT_COST } from "../scripts/bench.mjs";
+
+const roll = (nat, mod = 20) => ({ nat, mod, parts: [{ label: "skill", value: mod }] });
+const act = (s, over, r = roll(15)) => applyBenchAction(s, { benchId: "reta", action: "spotter", rider: "violet", ...over }, r);
+const d6 = async () => 3;
+const circ = (s, pc, key = "A") => computeMod(s, pc, key, {}, 18).parts.find((p) => p.label === "circumstance")?.value;
+
+test("a Spotter success is +1 and a crit +2 circumstance, and the best circumstance bonus wins over Surging", () => {
+  const s = freshState();
+  assert.ok(act(s, {}, roll(10, 20)).ok);                       // 30 vs DC 28: success
+  assert.equal(s.bench.help.violet.bonus, 1);
+  assert.equal(circ(s, "violet"), 1);
+  const s2 = freshState();
+  act(s2, {}, roll(18, 20));                                    // 38: crit
+  assert.equal(s2.bench.help.violet.bonus, 2);
+  s2.drake.violet = -1;                                         // Surging is +1, the Spotter's +2 is better and they don't stack
+  assert.equal(circ(s2, "violet"), 2);
+  const s3 = freshState(); s3.drake.violet = -1;
+  assert.equal(circ(s3, "violet"), 1);
+});
+
+test("one bench action per member per section; help must come before the rider rolls", () => {
+  const s = freshState();
+  assert.ok(act(s, {}).ok);
+  assert.equal(validateBenchRequest(s, { benchId: "reta", action: "crowd" }).ok, false, "Reta already acted");
+  assert.equal(validateBenchRequest(s, { benchId: "rowan", action: "spotter", rider: "aji" }).ok, true, "Rowan still can");
+  applyPcCheck(s, { pcId: "aji", choiceId: "muscle-through:athletics", lineId: "standard" }, roll(15, 20));
+  assert.equal(validateBenchRequest(s, { benchId: "rowan", action: "spotter", rider: "aji" }).ok, false, "Aji already rolled");
+  assert.equal(validateBenchRequest(s, { benchId: "rowan", action: "pit", rider: "aji", skill: "nature" }).ok, true, "a pit stop can still happen");
+  assert.equal(validateBenchRequest(s, { benchId: "rowan", action: "pit", rider: "aji", skill: "survival" }).ok, false, "pit crew uses Nature, Medicine or Crafting");
+});
+
+test("pit crew: -1 VP, the drake climbs, once per rider per lap, and it undoes cleanly", () => {
+  const s = freshState();
+  s.drake.violet = 1;                                           // Winded
+  const r = applyBenchAction(s, { benchId: "rowan", action: "pit", rider: "violet", skill: "nature" }, roll(12, 20));   // 32 vs 30
+  assert.ok(r.ok);
+  assert.equal(s.drake.violet, 0);
+  assert.equal(s.bench.pit.violet.cost, PIT_COST);
+  assert.equal(validateBenchRequest(s, { benchId: "reta", action: "pit", rider: "violet", skill: "crafting" }).ok, false, "only one stop per lap");
+  clearBenchAct(s, "rowan");
+  assert.equal(s.drake.violet, 1);
+  assert.equal(s.bench.pit.violet, undefined);
+  assert.equal(s.bench.pitLap.violet, undefined);
+  assert.equal(s.bench.acts.rowan, undefined);
+});
+
+test("a pit crit takes the drake up two rungs but never above Surging; a crit failure drops it", () => {
+  const s = freshState(); s.drake.violet = 1;
+  applyBenchAction(s, { benchId: "rowan", action: "pit", rider: "violet", skill: "nature" }, roll(20, 20));     // crit
+  assert.equal(s.drake.violet, -1);
+  const s2 = freshState(); s2.drake.aji = -1;
+  applyBenchAction(s2, { benchId: "rowan", action: "pit", rider: "aji", skill: "crafting" }, roll(20, 20));
+  assert.equal(s2.drake.aji, -1, "already Surging");
+  const s3 = freshState(); s3.drake.violet = 0;
+  applyBenchAction(s3, { benchId: "rowan", action: "pit", rider: "violet", skill: "nature" }, roll(1, 0));        // crit failure
+  assert.equal(s3.drake.violet, 1);
+});
+
+test("the pit cost comes off the rider's VP when the section resolves, and the bench is cleared after", async () => {
+  const s = freshState();
+  s.drake.violet = 2;
+  applyBenchAction(s, { benchId: "rowan", action: "pit", rider: "violet", skill: "nature" }, roll(12, 20));
+  applyPcCheck(s, { pcId: "violet", choiceId: "muscle-through:athletics", lineId: "standard" }, roll(15, 20), { autoVp: true });   // success: +2
+  await resolveSection(s, {}, d6);
+  assert.equal(s.vp.violet, 2 + PIT_COST);
+  assert.deepEqual(s.bench.acts, {});
+  assert.deepEqual(s.bench.help, {});
+  assert.deepEqual(s.bench.pit, {});
+  assert.equal(s.bench.pitLap.violet, 1, "the lap of the last stop is remembered");
+  assert.equal(sectionLimits(1, "B", { pit: true }).min, sectionLimits(1, "B").min - 1);
+});
+
+test("Handler: the penalty is ignored and a Narrows strike is cancelled", () => {
+  const s = freshState(); s.lap = 2; s.sec = 1; s.drake.violet = 2;
+  const hasDrake = () => computeMod(s, "violet", "A", {}, 18).parts.some((p) => /drake/.test(p.label));
+  assert.equal(hasDrake(), true);
+  applyBenchAction(s, { benchId: "rowan", action: "handler", rider: "violet" }, roll(12, 20));
+  assert.equal(hasDrake(), false);
+  const nreq = { pcId: "violet", choiceId: "the-narrows-inside-sheltered:narrows", narrows: ["athletics", "nature", "survival"] };
+  const res = applyNarrows(s, nreq, [{ skill: "athletics", nat: 2, mod: 20 }, { skill: "nature", nat: 15, mod: 20 }, { skill: "survival", nat: 3, mod: 20 }], { autoVp: true });
+  assert.ok(res.ok);
+  assert.equal(s.sheltered.violet, true, "two failures, one cancelled: still sheltered");
+  assert.ok(s.pending.violet.notes.some((n) => /Handler/.test(n)));
+});
+
+test("Crowd adds Favor; Coach gives a used skill back; both undo", () => {
+  const s = freshState();
+  applyBenchAction(s, { benchId: "reta", action: "crowd" }, roll(10, 23));
+  assert.equal(s.favor.party, 1);
+  applyPcCheck(s, { pcId: "violet", choiceId: "muscle-through:athletics", lineId: "standard" }, roll(15, 20));
+  assert.deepEqual(s.used.violet, ["athletics"]);
+  applyBenchAction(s, { benchId: "rowan", action: "coach", rider: "violet" }, roll(15, 20));   // 35 vs 30
+  assert.deepEqual(s.used.violet, []);
+  clearBenchAct(s, "rowan"); clearBenchAct(s, "reta");
+  assert.deepEqual(s.used.violet, ["athletics"]);
+  assert.equal(s.favor.party, 0);
+});
+
+test("Burn: +2 on the roll, the drake drops a rung, only for a Fresh or Surging drake, never in the Narrows", () => {
+  const s = freshState();
+  const req = { pcId: "violet", choiceId: "muscle-through:athletics", lineId: "standard", burn: true };
+  const m = computeMod(s, "violet", "A", req, 18);
+  assert.equal(m.parts.find((p) => p.label === "Burn").value, 2);
+  assert.ok(applyPcCheck(s, req, { nat: 12, mod: m.total, parts: m.parts }).ok);
+  assert.equal(s.drake.violet, 1);
+  const w = freshState(); w.drake.aji = 1;
+  assert.equal(validatePcRequest(w, { ...req, pcId: "aji" }).ok, false);
+  const n = freshState(); n.lap = 2; n.sec = 1;
+  assert.equal(validatePcRequest(n, { pcId: "violet", choiceId: "the-narrows-inside-sheltered:narrows", narrows: ["athletics", "nature", "survival"], burn: true }).ok, false);
+});
+
+test("Surging lasts until the lap ends, then becomes Fresh", async () => {
+  const s = freshState(); s.drake.violet = -1; s.drake.aji = 1;
+  for (let i = 0; i < 3; i++) await resolveSection(s, {}, d6);
+  assert.equal(s.drake.violet, -1, "still Surging mid-lap");
+  await resolveSection(s, {}, d6);                            // the lap's last section
+  assert.equal(s.lap, 2);
+  assert.equal(s.drake.violet, 0);
+  assert.equal(s.drake.aji, 1, "other conditions are not refreshed");
+});
+
+test("the bench dialog lists every action, both riders, skill choices, and a locked view after acting", () => {
+  const s = freshState();
+  const html = buildBenchDialogHtml(s, "rowan", { mods: { perception: 22, nature: 20, crafting: 22 } });
+  assert.equal((html.match(/<input type="radio" name="action"/g) ?? []).length, 6);
+  assert.equal((html.match(/<input type="radio" name="rider"/g) ?? []).length, 2);
+  assert.match(html, /name="skill_pit"/);
+  assert.doesNotMatch(html, /<form/i);
+  assert.ok(html.includes(`Perception +${benchMod(22)}`));
+  const res = applyBenchAction(s, { benchId: "rowan", action: "spotter", rider: "aji" }, roll(15, 24));
+  const locked = buildBenchDialogHtml(s, "rowan", { mods: {}, locked: res.act });
+  assert.match(locked, /already acted this section/);
+  assert.match(buildBenchCardHtml(res.act), /Rowan: Spotter for Aji/);
+  const fd = { get: (k) => ({ action: "pit", rider: "violet", skill_pit: "crafting" })[k] ?? null };
+  assert.deepEqual(readBenchForm(fd), { action: "pit", rider: "violet", skill: "crafting" });
+});

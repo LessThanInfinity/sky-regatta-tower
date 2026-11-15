@@ -24,7 +24,18 @@ The rules live in `scripts/engine.mjs` (pure JavaScript, unit tested). The rider
 - **Battle:** Bump, Cut off, Distract and Draft take 1 VP from the target when they land (queued as an NPC adjustment). Hold the line cancels one NPC attack on that PC (a crit also bumps the attacker). NPC hits on a PC now subtract the VP automatically.
 - **The Narrows (lap 2):** three checks with three different skills, strikes and shelter handled for you.
 - **Hero Points:** after a rider has rolled, **Roll my check** reopens as a read-only view of the roll (what was picked, the d20, the degree and the suggested VP). If the PF2e actor has a Hero Point, a **Spend a Hero Point to reroll** button appears there. It rerolls the d20 and keeps the new result, undoes what the old roll did (Favor, drake, rival VP) and applies the new one, and takes the point off the actor. One reroll per roll. In the Narrows (three checks) the player picks which one of the three dice to reroll.
-- **Section numbers:** the window subtitle and the GM report say which of the 16 sections it is (for example *After section 4/16 · Lap 1 D, Sprint*).
+- **Section numbers:** the window subtitle shows the section being played now (for example *Section 5/16 · A, Entry*, under *LAP 2/4*), and the GM report says which section it covers.
+- **The bench (Reta and Rowan):** the two party members who aren't riding get their own **Bench action** button (in the tower and on the DC card). Each takes one action per section and rolls with their own PF2e skill plus the party's +2. The GM sees the result in a whisper and the tower shows it. Help has to come before the rider rolls (except the pit stop).
+  - **Spotter** (Perception DC 28): +1 circumstance on a rider's roll this section, +2 on a crit.
+  - **Handler** (Nature DC 30): the rider's drake penalty is ignored this section and one Narrows strike is cancelled; a crit adds +1 circumstance.
+  - **Pit crew** (Nature, Medicine or Crafting DC 30): the rider boxes and pays 1 VP (already in their stepper). Success: the drake climbs a rung, a crit two (up to Surging), a crit failure drops a rung. Once per rider per lap.
+  - **Scout** (Society or Survival DC 28): learn the best lane or line (the GM tells them); a crit gives +1 circumstance.
+  - **Crowd** (Performance DC 28): +1 party Favor, +2 on a crit.
+  - **Coach** (Diplomacy DC 30): the rider's last used skill (last two on a crit) can be used again this lap.
+  - The GM can **clear** a bench action from the controls.
+- **NPC benches:** each NPC rider's team has a bench too. Each lap there is a chance (world setting *NPC bench strength*, default 0.5) that the NPC's lap roll gets +1; the GM report notes it. In simulations this leaves the party at roughly 20 percent if they only spot and 30 to 35 percent if they go All-out and use pit stops.
+- **Surging:** the drake ladder now has one rung above Fresh. A Surging drake gives +1 circumstance (it doesn't stack with bench help) and lasts until the end of the lap. A pit crit or a crit on Command the drake gets there.
+- **Burn the drake:** a rider with a Fresh or Surging drake can take +2 on a roll and drop the drake a rung (not in the Narrows).
 - **GM tweaks:** drake rung and party Favor steppers for pit actions and rulings.
 
 ## Install

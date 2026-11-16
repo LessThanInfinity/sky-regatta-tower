@@ -37,6 +37,10 @@ The rules live in `scripts/engine.mjs` (pure JavaScript, unit tested). The rider
 - **Burn the drake (off by default, setting *Allow Burn the drake*):** a rider with a Fresh or Surging drake can take +2 on a roll and drop the drake a rung (not in the Narrows).
 - **GM tweaks:** drake rung and party Favor steppers for pit actions and rulings.
 
+## Crit cut-ins (v0.4.11)
+
+With the **Cinematic Cut-ins** module installed, a rider's critical success (a PC check that is a crit after the natural 20 or 1 shift, including any one check in the Narrows and a Hero Point reroll) plays that actor's own cut-in for everyone. Cinematic Cut-ins can't catch these itself: it only reacts to PF2e's own attack-roll messages, and the tower posts its own cards. The actor needs a cut-in set up (the module's active configuration). The world setting *Play the crit cut-in on a critical success* turns it off.
+
 ## Install
 
 In Foundry: Add-on Modules, Install Module, paste the manifest URL:

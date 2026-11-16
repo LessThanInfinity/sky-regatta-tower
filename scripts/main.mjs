@@ -15,6 +15,7 @@ import {
   SKILL_LABEL, PARTY_BONUS, sectionMenu, validatePcRequest, computeMod, applyPcCheck, applyNarrows, clearPcRoll,
   eligibleTargets, RULES, planNpcDice, readDialogForm, readRerollForm, rerollPcRoll, degreeOf, buildNpcDiceHtml, buildDcCardHtml, buildPcRollHtml, buildNarrowsHtml, buildDialogHtml,
 } from "./rolls.mjs";
+import { CUTIN_ID, isCrit, playCritCutIn } from "./cutin.mjs";
 
 const MODULE_ID = "sky-regatta-tower";
 const CHANNEL = `module.${MODULE_ID}`;
@@ -40,6 +41,24 @@ const gmIds = () => ChatMessage.getWhisperRecipients("GM").map((u) => u.id);
 async function whisper(html) {
   const gms = ChatMessage.getWhisperRecipients("GM").map((u) => u.id);
   await ChatMessage.create({ content: html, whisper: gms, speaker: { alias: "Sky Regatta" } });
+}
+
+/**
+ * Plays the rider's Cinematic Cut-ins crit animation. The tower posts its own cards with no PF2e roll data, so the
+ * cut-in module can't spot the crit by itself. Waits for Dice So Nice (if present) so the cut-in lands after the dice.
+ * Not awaited by callers: a slow animation must never hold up the roll queue.
+ */
+async function critCutIn(actor, message, degrees) {
+  if (!isCrit(degrees) || !game.settings.get(MODULE_ID, "critCutIn")) return;
+  try {
+    const mod = game.modules.get(CUTIN_ID);
+    const api = mod?.active ? mod.api : null;
+    if (message && game.dice3d?.waitFor3DAnimationByMessageID) {
+      await Promise.race([game.dice3d.waitFor3DAnimationByMessageID(message.id), new Promise((r) => setTimeout(r, 6000))]);
+    }
+    const result = playCritCutIn(actor, api, (o) => foundry.utils.deepClone(o));
+    if (result !== "played") console.debug(`${MODULE_ID} | crit cut-in skipped: ${result}`);
+  } catch (err) { console.warn(`${MODULE_ID} | crit cut-in failed`, err); }
 }
 
 // ---------- actors and modifiers ----------
@@ -193,7 +212,8 @@ async function executePcRoll(req, userId) {
     const res = applyNarrows(state, req, rolls, { autoVp: autoVp() });
     if (!res.ok) return reject(userId, res.error);
     await saveState(state);
-    await ChatMessage.create({ speaker, whisper: gmIds(), rolls: chat, sound: CONFIG.sounds.dice, content: buildNarrowsHtml({ pcName: entry.name, checks: res.checks, vp: res.pending.suggested, notes: res.pending.notes, auto: autoVp() }) });
+    const nmsg = await ChatMessage.create({ speaker, whisper: gmIds(), rolls: chat, sound: CONFIG.sounds.dice, content: buildNarrowsHtml({ pcName: entry.name, checks: res.checks, vp: res.pending.suggested, notes: res.pending.notes, auto: autoVp() }) });
+    void critCutIn(actor, nmsg, res.checks.map((c) => c.degree));
     return;
   }
 
@@ -203,10 +223,11 @@ async function executePcRoll(req, userId) {
   if (!res.ok) return reject(userId, res.error);
   await saveState(state);
   const p = res.pending;
-  await ChatMessage.create({
+  const msg = await ChatMessage.create({
     speaker, whisper: gmIds(), rolls: [roll], sound: CONFIG.sounds.dice,
     content: buildPcRollHtml({ pcName: entry.name, choice: v.choice, lineId: v.lineId, dc: v.dc, nat: roll.total, parts: m.parts, total: p.total, degree: p.degree, vp: p.suggested, notes: p.notes, auto: autoVp() }),
   });
+  void critCutIn(actor, msg, p.degree);
 }
 
 /** Runs on the active GM's client: spend a Hero Point, reroll, redo the roll's effects, post the card. */
@@ -238,7 +259,9 @@ async function executeReroll(req, userId) {
     const choice = menu.choices.find((c) => c.id === p.choiceId);
     content = buildPcRollHtml({ pcName: entry.name, choice, lineId: p.lineId, dc: p.dc, nat: p.nat, parts: res.parts, total: p.total, degree: p.degree, vp: p.suggested, notes: p.notes, auto: p.auto, reroll: p.reroll });
   }
-  await ChatMessage.create({ speaker, whisper: gmIds(), rolls: [roll], sound: CONFIG.sounds.dice, content });
+  const rmsg = await ChatMessage.create({ speaker, whisper: gmIds(), rolls: [roll], sound: CONFIG.sounds.dice, content });
+  // after a Hero Point reroll, only the rerolled check can newly be a crit (the other Narrows checks already played theirs)
+  void critCutIn(actor, rmsg, p.skill === "narrows" ? p.checks[p.reroll?.which ?? 0]?.degree : p.degree);
 }
 
 /** Runs on the active GM's client: roll the bench member's check, store the result, post the card. */
@@ -565,6 +588,11 @@ Hooks.once("init", () => {
   game.settings.register(MODULE_ID, "autoVp", {
     name: "Player rolls fill in the VP",
     hint: "On (default): a player's roll puts its VP in that rider's stepper so you don't forget it; you can still change it before you roll the section. Off: the roll only suggests VP and you enter it yourself.",
+    scope: "world", config: true, type: Boolean, default: true,
+  });
+  game.settings.register(MODULE_ID, "critCutIn", {
+    name: "Play the crit cut-in on a critical success",
+    hint: "Needs the Cinematic Cut-ins module. When a rider's check is a critical success, plays that actor's own cut-in for everyone (set one up on the actor first). Cinematic Cut-ins can't spot these crits itself because the tower posts its own roll cards.",
     scope: "world", config: true, type: Boolean, default: true,
   });
   game.settings.register(MODULE_ID, "npcDice", {

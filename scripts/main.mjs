@@ -5,7 +5,7 @@
  * to make their rolls over the module socket, so there is one source of truth and nothing to trust.
  */
 import {
-  ROSTER, BENCH, SECTIONS, freshState, normalizeState, resolveSection, undo as undoState, nextSection, isFinished, buildReport,
+  ROSTER, BENCH, SECTIONS, sectionNumber, freshState, normalizeState, resolveSection, undo as undoState, nextSection, isFinished, buildReport,
 } from "./engine.mjs";
 import { towerContext, validateInput, readoutFor } from "./view.mjs";
 import { validateBenchRequest, applyBenchAction, clearBenchAct, buildBenchDialogHtml, buildBenchCardHtml, readBenchForm, benchMod } from "./bench.mjs";
@@ -16,12 +16,14 @@ import {
   eligibleTargets, RULES, planNpcDice, readDialogForm, readRerollForm, rerollPcRoll, degreeOf, buildNpcDiceHtml, buildDcCardHtml, buildPcRollHtml, buildNarrowsHtml, buildDialogHtml,
 } from "./rolls.mjs";
 import { CUTIN_ID, isCrit, playCritCutIn } from "./cutin.mjs";
+import { RaceView } from "./viz.mjs";
 
 const MODULE_ID = "sky-regatta-tower";
 const CHANNEL = `module.${MODULE_ID}`;
 const { ApplicationV2, HandlebarsApplicationMixin, DialogV2 } = foundry.applications.api;
 
 let app = null;
+let raceView = null;          // the animated race view; it outlives the tower's redraws
 let lastCommandId = null;
 let busy = false;
 let queue = Promise.resolve();     // serialises roll requests so two players can't overwrite each other
@@ -63,6 +65,14 @@ async function critCutIn(actor, message, degrees) {
 
 // ---------- actors and modifiers ----------
 const actorFor = (entry) => game.actors.getName(entry.actor);
+/** The picture on a rider's drake token: the actor's token image (or portrait), unless it is a video or the setting is off. */
+function vizToken(id) {
+  if (!game.settings.get(MODULE_ID, "vizTokens")) return null;
+  const entry = ROSTER.find((r) => r.id === id);
+  const a = entry ? actorFor(entry) : null;
+  const ok = (src) => (src && !/\.(webm|mp4|m4v)$/i.test(src) ? src : null);
+  return ok(a?.prototypeToken?.texture?.src) ?? ok(a?.img) ?? null;
+}
 /** A skill modifier from the PF2e actor, falling back to the numbers stored in the roster. */
 function skillMod(entry, skill) {
   const a = actorFor(entry);
@@ -475,12 +485,38 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
     this.#draft = game.user.isGM ? captureDraft(this.element, this.#sectionKey) : null;
     const state = getState() ?? freshState();
     const showPortraits = game.settings.get(MODULE_ID, "showPortraits");
-    return towerContext(state, {
+    const ctx = towerContext(state, {
       isGM: game.user.isGM,
       canRoll: ridersFor(game.user).length > 0,
       canBench: benchFor(game.user).length > 0,
       portraitFor: showPortraits ? (r) => game.actors.getName(r.actor)?.img ?? null : null,
     });
+    ctx.showViz = game.settings.get(MODULE_ID, "showViz");
+    return ctx;
+  }
+
+  /** Race view: build it once, hang it in the window's slot after every redraw, and tell it where everyone stands. */
+  #syncViz(state) {
+    const slot = this.element.querySelector(".srt-viz-slot");
+    if (!slot) { raceView?.stop(); return; }
+    raceView ??= new RaceView(ROSTER.map((r) => ({ id: r.id, name: r.name, color: r.color })), {
+      tokenFor: (id) => vizToken(id),
+      reducedMotion: () => !game.settings.get(MODULE_ID, "vizAnimate") || !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches,
+    });
+    raceView.refreshTokens();
+    raceView.mount(slot);
+    const nx = nextSection(state);
+    raceView.update(state.vp, state.delta, isFinished(state) ? "Finish" : `Lap ${Math.min(state.lap, 4)} · Section ${nx ? sectionNumber(nx.lap, nx.key) : 16}`);
+  }
+
+  async _onFirstRender(context, options) {
+    await super._onFirstRender?.(context, options);
+    this.setPosition({ width: game.settings.get(MODULE_ID, "showViz") ? 780 : 420 });
+  }
+
+  async _onClose(options) {
+    raceView?.stop();
+    return super._onClose?.(options);
   }
 
   /** Live "= new total" readout beside each PC stepper as the GM types or steps. */
@@ -492,6 +528,7 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
       input.addEventListener("input", () => this.#updateReadout(input));
     }
     const st = getState() ?? freshState();
+    this.#syncViz(st);
     const key = `${st.lap}-${st.sec}`;
     // A player rolling shouldn't wipe what the GM typed: put it back while we're still in the same section.
     applyDraft(this.element, this.#draft, key, (el) => { if (el.dataset.kind === "pc") this.#updateReadout(el); });
@@ -584,6 +621,24 @@ Hooks.once("init", () => {
     hint: "Show each rider's actor image next to their name (looks actors up by name).",
     scope: "world", config: true, type: Boolean, default: false,
     onChange: () => app?.render(),
+  });
+  game.settings.register(MODULE_ID, "showViz", {
+    name: "Show the race view",
+    hint: "Dock the animated top-down race view beside the standings: the eight drakes fly in the order of the tower. Turn off on a small screen.",
+    scope: "client", config: true, type: Boolean, default: true,
+    onChange: () => { if (app?.rendered) { app.setPosition({ width: game.settings.get(MODULE_ID, "showViz") ? 780 : 420 }); app.render(); } },
+  });
+  game.settings.register(MODULE_ID, "vizAnimate", {
+    name: "Animate the race view",
+    hint: "Off: the drakes jump to their places and nothing scrolls or flaps. Also off automatically if your system asks for reduced motion.",
+    scope: "client", config: true, type: Boolean, default: true,
+    onChange: () => { if (app?.rendered) app.render(); },
+  });
+  game.settings.register(MODULE_ID, "vizTokens", {
+    name: "Actor tokens on the drakes",
+    hint: "Put each rider's token image on their drake, in a ring of their team color. Off: team-colored letters instead.",
+    scope: "world", config: true, type: Boolean, default: true,
+    onChange: () => { raceView?.refreshTokens(); },
   });
   game.settings.register(MODULE_ID, "autoVp", {
     name: "Player rolls fill in the VP",

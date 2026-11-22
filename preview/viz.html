@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sky Regatta race view (real module code)</title>
+<link rel="stylesheet" href="../styles/regatta-viz-2.0.0.css">
+<style>
+  body { margin: 0; background: #0b0e13; color: #e8ecf2; font: 13px system-ui, sans-serif; display: flex; gap: 16px; padding: 14px; align-items: flex-start; }
+  #slot { width: 340px; height: 760px; position: relative; background: #0b0d12; border: 1px solid #232a36; }
+  .ctl { display: flex; flex-direction: column; gap: 6px; width: 220px; }
+  button, select { background: #1d2430; color: #e8ecf2; border: 1px solid #2c3646; border-radius: 6px; padding: 7px 10px; font: inherit; cursor: pointer; }
+  pre { margin: 0; font-size: 11px; color: #8b95a7; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="slot"></div>
+<div class="ctl">
+  <button id="roll">Random section</button>
+  <button id="tie">Everyone tied</button>
+  <button id="spread">Big gaps</button>
+  <button id="reset">Reset</button>
+  <button id="tokens">Toggle token images</button>
+  <select id="size"><option value="1">Slot 340 x 760</option><option value="0.7">Slot 70 percent</option><option value="wide">Slot 500 x 500</option></select>
+  <pre id="out"></pre>
+</div>
+<script type="module">
+import { RaceView } from "../scripts/viz.mjs";
+import { ROSTER, freshState, resolveSection } from "../scripts/engine.mjs";
+
+const slot = document.getElementById("slot");
+let useImg = false;
+const view = new RaceView(ROSTER.map((r) => ({ id: r.id, name: r.name, color: r.color })), {
+  tokenFor: (id) => (useImg ? "data:image/svg+xml;utf8," + encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'><rect width='64' height='64' fill='#999'/><circle cx='32' cy='26' r='12' fill='#eee'/><rect x='14' y='42' width='36' height='22' rx='10' fill='#eee'/></svg>`) : null),
+});
+let state = freshState();
+const d6 = async () => 1 + Math.floor(Math.random() * 6);
+function push() {
+  view.update(state.vp, state.delta, `Lap ${state.lap} · Section ${state.sec + 1}`);
+  document.getElementById("out").textContent = ROSTER.map((r) => `${r.name}: ${state.vp[r.id]}`).join("\n");
+}
+view.mount(slot); push();
+document.getElementById("roll").onclick = async () => {
+  const pcs = Object.fromEntries(ROSTER.filter((r) => r.pc).map((r) => [r.id, state.vp[r.id] + Math.floor(Math.random() * 4)]));
+  await resolveSection(state, pcs, d6, {});
+  push();
+};
+document.getElementById("tie").onclick = () => { for (const r of ROSTER) { state.vp[r.id] = 5; state.delta[r.id] = 0; } push(); };
+document.getElementById("spread").onclick = () => { ROSTER.forEach((r, i) => { state.vp[r.id] = [30, 24, 17, 12, 8, 5, 2, 0][i]; state.delta[r.id] = 0; }); push(); };
+document.getElementById("reset").onclick = () => { state = freshState(); push(); };
+document.getElementById("tokens").onclick = () => { useImg = !useImg; view.refreshTokens(); };
+document.getElementById("size").onchange = (e) => {
+  const v = e.target.value;
+  slot.style.width = v === "wide" ? "500px" : `${340 * Number(v)}px`; slot.style.height = v === "wide" ? "500px" : `${760 * Number(v)}px`;
+};
+window.view = view; window.getState = () => state;
+</script>
+</body>
+</html>

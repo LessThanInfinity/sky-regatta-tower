@@ -41,6 +41,17 @@ The rules live in `scripts/engine.mjs` (pure JavaScript, unit tested). The rider
 
 With the **Cinematic Cut-ins** module installed, a rider's critical success (a PC check that is a crit after the natural 20 or 1 shift, including any one check in the Narrows and a Hero Point reroll) plays that actor's own cut-in for everyone. Cinematic Cut-ins can't catch these itself: it only reacts to PF2e's own attack-roll messages, and the tower posts its own cards. The actor needs a cut-in set up (the module's active configuration). The world setting *Play the crit cut-in on a critical success* turns it off.
 
+## Race view (v2.0)
+
+A portrait, top-down window docked on the right of the standings tower. The eight drakes fly down it in the order of the tower, so nobody has to drag tokens around the map.
+
+- **Positions:** the leader is at the top. The vertical spacing is half even-by-rank and half the real VP gap, so the top three, the middle two and the last three always keep to their thirds of the view, and a runaway leader still looks like one. A very wide field also shrinks the drakes a little. Drakes that would overlap fly in different lanes.
+- **Motion:** each drake is a layered cutout (two wings, tail, body, head). The wings fold and flap, the tail sways and the drake banks into a move. The land, clouds and rocks scroll past at different speeds for depth, each drake casts a shadow, and the wingtips leave streaks. A drake that gains places beats its wings harder and swerves around the rocks. The rocks are decoration.
+- **Tokens:** each rider's token image sits on their drake in a ring of their team color (letters if the actor has no image).
+- **Updates by itself:** it reads the same standings as the tower and moves when a section is resolved, undone or reset. It never changes the race.
+- **Settings:** *Show the race view* (per player, on a small screen turn it off; the window shrinks back to the tower), *Animate the race view* (off: the drakes jump to their places and nothing scrolls; also off with the system's reduced-motion setting) and *Actor tokens on the drakes* (world).
+- **Files:** `scripts/racelayout.mjs` (positions, unit tested), `scripts/wyvern.mjs` (the artwork as SVG), `scripts/viz.mjs` (the animation), `styles/regatta-viz-2.0.0.css`. `preview/viz.html` runs the real view in a browser with buttons to roll, tie and spread the field.
+
 ## Install
 
 In Foundry: Add-on Modules, Install Module, paste the manifest URL:
@@ -61,7 +72,7 @@ Then enable the module in the world.
 
 ```bash
 npm test                       # rules engine tests
-python -m http.server 8765     # then open http://localhost:8765/preview/index.html
+python -m http.server 8765     # then open http://localhost:8765/preview/index.html (tower) or /preview/viz.html (race view)
 ```
 
 The preview page renders the real template, CSS and engine with Foundry's window chrome faked.

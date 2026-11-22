@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sky Regatta visualizer concept</title>
 <style>
-  :root { --W: 340px; --H: 600px; }
+  :root { --W: 340px; --H: 720px; }
   * { box-sizing: border-box; }
   body { margin: 0; background: #0b0e13; color: #e8ecf2; font: 13px/1.4 system-ui, Segoe UI, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 14px; gap: 10px; min-height: 100vh; }
   h1 { font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #8b95a7; margin: 0; }
@@ -51,7 +51,7 @@
       <button id="tie">Everyone tied (stress test)</button>
       <button id="spread">Big gaps (stress test)</button>
       <button id="reset">Reset</button>
-      <div class="note">Vertical spacing is the real VP gap, capped at 6. The tower on the left stays as it is today.</div>
+      <div class="note">Spacing is half even-by-rank, half real VP gap, in a steady three-band view (top three, middle, bottom). A very wide field also shrinks the drakes a little. The tower on the left stays as it is today.</div>
     </div>
   </div>
   <div class="viz" id="viz">
@@ -59,12 +59,12 @@
     <div class="layer" id="shadows"></div>
     <div class="layer"><div class="scroller" id="cScroll"></div></div>
     <div class="layer" id="obst"></div>
-    <canvas id="trails" width="340" height="600"></canvas>
+    <canvas id="trails" width="340" height="720"></canvas>
     <div class="layer" id="drakes"></div>
     <div class="layer"><div class="scroller" id="fScroll"></div></div>
     <div class="layer haze"></div>
     <div class="layer vig"></div>
-    <div class="cap">Lap <span id="cl">1</span> · Section <span id="cs">1</span></div>
+    <div class="cap">Lap <span id="cl">1</span> · Section <span id="cs">1</span><span id="zm"></span></div>
   </div>
 </div>
 
@@ -98,8 +98,10 @@
 </svg>
 
 <script>
-const W = 340, H = 600;
-const TOP = 78, STEP = 64, CAP = 6;          // y of the leader, pixels per VP of gap, gap cap
+const W = 340, H = 720;
+const TOP = 74, AVAIL = H - 74 - 96;               // y of the leader, vertical room for the pack
+const BLEND = 0.4, GAP_FULL = 6;                   // 0 = evenly spaced by rank, 1 = pure VP gap; a gap of GAP_FULL VP uses the whole height
+const cam = { cur: 1, target: 1 };                // camera zoom: 1 = close, smaller = zoomed out
 const SEP_Y = 66, SEP_X = 124;                // how close two drakes may be before they must avoid each other
 
 const TEAMS = { Party: '#a855f7', Scales: '#22a559', Light: '#f5b301', Flash: '#ff2e7e' };
@@ -221,19 +223,27 @@ R.forEach((r) => {
   r.el = d; r.sh = s; r.rot = d.querySelector('.rot'); r.srot = s.querySelector('.rot');
   r.wings = [...d.querySelectorAll('.wing'), ...s.querySelectorAll('.wing')];
   r.tails = [...d.querySelectorAll('.tail'), ...s.querySelectorAll('.tail')];
-  r.x = W / 2; r.y = H + 80; r.bx = W / 2; r.trail = [[], []]; r.flap = 0; r.amp = 0.3;
+  r.tok = d.querySelector('.tok'); r.x = W / 2; r.y = H + 80; r.bx = W / 2; r.trail = [[], []]; r.flap = 0; r.amp = 0.3;
 });
 
 /* ---------- layout: VP gap -> y, avoid overlap -> x ---------- */
 function layout() {
   const lead = Math.max(...R.map((r) => r.vp));
-  R.forEach((r) => { r.rawY = TOP + Math.min(lead - r.vp, CAP) * STEP; });
+  const maxGap = Math.max(...R.map((r) => lead - r.vp), 0);
   const order = [...R].sort((a, b) => b.vp - a.vp || a.rank - b.rank || R.indexOf(a) - R.indexOf(b));
   order.forEach((r, i) => { r.rank = i; });
-  let prev = null;
-  order.forEach((r) => {                                    // ties get a small stagger so they never stack exactly
-    r.ty = prev && r.rawY < prev.ty + 30 ? prev.ty + 30 : r.rawY; prev = r;
+  const full = Math.max(maxGap, GAP_FULL);
+  order.forEach((r, i) => {
+    /* half even-by-rank, half real VP gap */
+    const b = BLEND * Math.min(1, maxGap / full);          // a tight pack is spread evenly; a stretched one follows the real gaps more
+    const y = (1 - b) * (i / 7) * AVAIL + b * ((lead - r.vp) / full) * AVAIL;
+    r.rawY = TOP + y;                                   // even-by-rank keeps the top three / middle / bottom three bands steady
   });
+  let prev = null;
+  order.forEach((r) => {                                    // never closer than this vertically (ties stay in tower order)
+    r.ty = prev && r.rawY < prev.ty + 34 ? prev.ty + 34 : r.rawY; prev = r;
+  });
+  cam.target = Math.max(0.7, Math.min(1, 1 - (maxGap - 10) / 70));   // very wide fields: shrink the drakes a little
   const placed = [], slots = []; for (let x = 74; x <= W - 74; x += 12) slots.push(x);
   order.forEach((r) => {
     let best = null, bestScore = 1e9;
@@ -261,7 +271,7 @@ function applyRoll(gains) {
 }
 $('roll').onclick = () => applyRoll((r) => Math.floor(rnd(0, 4.6)));
 $('tie').onclick = () => { R.forEach((r) => { r.vp = 5; r.delta = 0; }); layout(); renderTower(); };
-$('spread').onclick = () => { R.forEach((r, i) => { r.vp = [14, 11, 9, 8, 6, 4, 2, 0][i]; r.delta = 0; }); layout(); renderTower(); };
+$('spread').onclick = () => { R.forEach((r, i) => { r.vp = [30, 24, 17, 12, 8, 5, 2, 0][i]; r.delta = 0; }); layout(); renderTower(); };
 $('reset').onclick = () => { lap = 1; sec = 1; R.forEach((r) => { r.vp = r.vp0; r.delta = 0; }); layout(); renderTower(); };
 layout(); R.forEach((r) => { r.x = r.bx; r.y = H + 60 + r.rank * 30; }); renderTower();
 
@@ -278,12 +288,15 @@ function frame(now) {
     o.el.style.transform = `translate(${o.x}px,${o.y}px)`;
   });
   cx.clearRect(0, 0, W, H);
+  cam.cur += (cam.target - cam.cur) * Math.min(1, dt * 1.6);
+  const cz = cam.cur, ds = Math.max(0.6, cz);
+  $('zm').textContent = cz < 0.97 ? ' · zoom ' + Math.round(cz * 100) + '%' : '';
   R.forEach((r) => {
     const px = r.x, py = r.y;
     let dodge = 0;                                           // steer around the rocks
-    obs.forEach((o) => { const dy = o.y - r.y, dx = r.x - o.x; if (dy > -50 && dy < 120 && Math.abs(dx) < o.r + 52) dodge += Math.sign(dx || 1) * (o.r + 52 - Math.abs(dx)) * 0.9 * (1 - Math.min(1, Math.abs(dy - 30) / 100)); });
+    obs.forEach((o) => { const dy = o.y - r.y, dx = r.x - o.x; if (dy > -50 && dy < 120 && Math.abs(dx) < (o.r + 52) * ds) dodge += Math.sign(dx || 1) * ((o.r + 52) * ds - Math.abs(dx)) * 0.9 * (1 - Math.min(1, Math.abs(dy - 30) / 100)); });
     const weave = Math.sin(t * r.wf + r.ph) * r.amp;
-    const tx = Math.max(72, Math.min(W - 72, r.bx + weave + dodge));
+    const tx = Math.max(72 * ds, Math.min(W - 72 * ds, W / 2 + (r.bx - W / 2) * cz + weave * ds + dodge));
     r.x += (tx - r.x) * Math.min(1, dt * 2.4);
     r.y += (r.ty - r.y) * Math.min(1, dt * 1.5);
     const vx = (r.x - px) / dt, vy = (r.y - py) / dt;
@@ -298,14 +311,15 @@ function frame(now) {
     r.wings.forEach((w, i) => { const sgn = 1; w.setAttribute('transform', `translate(-7 -14) rotate(${(a + (i % 2 ? 0 : 0)) * sgn}) scale(${k} ${1 - 0.05 * r.amp * Math.sin(r.flap + 1)}) translate(7 14)`); });
     r.tails.forEach((tl) => tl.setAttribute('transform', `rotate(${Math.sin(t * 1.6 + r.ph) * 5 - yaw * 0.25} 0 14)`));
     r.el.style.transform = `translate(${r.x}px,${r.y}px)`;
-    r.rot.style.transform = `rotate(${yaw}deg) scale(${z * (1 - Math.abs(bank) * 0.6)},${z})`;
-    const lift = (z - 1) * 260;
-    r.sh.style.transform = `translate(${r.x + 12 + lift}px,${r.y + 20 + lift}px)`;
-    r.srot.style.transform = `rotate(${yaw}deg) scale(${0.96 * (1 - Math.abs(bank) * 0.6)},0.96)`;
+    r.rot.style.transform = `rotate(${yaw}deg) scale(${z * ds * (1 - Math.abs(bank) * 0.6)},${z * ds})`;
+    r.tok.style.transform = `scale(${ds})`;
+    const lift = (z - 1) * 260 * ds;
+    r.sh.style.transform = `translate(${r.x + 12 * ds + lift}px,${r.y + 20 * ds + lift}px)`;
+    r.srot.style.transform = `rotate(${yaw}deg) scale(${0.96 * ds * (1 - Math.abs(bank) * 0.6)},${0.96 * ds})`;
     /* wingtip streaks in the air */
-    const ang = yaw * Math.PI / 180, span = 70 * k * z;
+    const ang = yaw * Math.PI / 180, span = 70 * k * z * ds;
     [-1, 1].forEach((sd, i) => {
-      const tip = { x: r.x + Math.cos(ang) * span * sd + Math.sin(ang) * 2, y: r.y - Math.sin(ang) * span * sd - 22 };
+      const tip = { x: r.x + Math.cos(ang) * span * sd + Math.sin(ang) * 2, y: r.y - Math.sin(ang) * span * sd - 22 * ds };
       const tr = r.trail[i]; tr.forEach((p) => { p.y += (speed.gScroll * 1.9) * dt; p.a -= dt * 1.1; });
       tr.push({ x: tip.x, y: tip.y, a: 0.55 * (0.4 + r.amp * 0.6) }); while (tr.length && (tr[0].a <= 0 || tr.length > 26)) tr.shift();
       cx.lineWidth = 1.2; cx.lineCap = 'round';

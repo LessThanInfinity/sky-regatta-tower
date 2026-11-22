@@ -5,10 +5,11 @@
 <title>Sky Regatta Standings: preview</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="../styles/regatta-0.4.10.css">
+<link rel="stylesheet" href="../styles/regatta-viz-2.0.0.css">
 <style>
   body { margin: 0; background: #2a2a2e; font-family: system-ui, sans-serif; color: #ddd; }
   .stage { display: flex; gap: 20px; padding: 16px; flex-wrap: wrap; align-items: flex-start; }
-  .win { width: 420px; border: 1px solid #000; box-shadow: 0 4px 16px #000a; }
+  .win { width: 780px; border: 1px solid #000; box-shadow: 0 4px 16px #000a; }
   .win-title { background: #111; padding: 6px 10px; font-size: 13px; color: #ccc; }
   .window-content { display: block; }
   .note { max-width: 300px; font-size: 13px; line-height: 1.4; }
@@ -38,7 +39,7 @@
     <div id="chat"></div>
   </div>
   <div class="note">
-    Preview harness: the same template, CSS, view helpers and rules (engine and rolls) as the module, with Foundry's windows and chat faked.
+    Preview harness: the same template, CSS, view helpers, race view and rules (engine and rolls) as the module, with Foundry's windows and chat faked.
   </div>
 </div>
 <dialog id="dlg"><form id="dlgbody"></form><div class="bar"><button id="dlgCancel" type="button">Cancel</button><button id="dlgRoll" type="button">Roll!</button></div></dialog>
@@ -50,6 +51,8 @@ import { validateBenchRequest, applyBenchAction, clearBenchAct, buildBenchDialog
 import { towerContext, validateInput, readoutFor } from "../scripts/view.mjs";
 import { captureTops, playSlides } from "../scripts/animate.mjs";
 import { captureDraft, applyDraft } from "../scripts/draft.mjs";
+import { RaceView } from "../scripts/viz.mjs";
+import { nextSection, isFinished, sectionNumber } from "../scripts/engine.mjs";
 import {
   SKILL_LABEL, sectionMenu, validatePcRequest, computeMod, applyPcCheck, applyNarrows, clearPcRoll, eligibleTargets,
   planNpcDice, readDialogForm, rerollPcRoll, degreeOf, buildNpcDiceHtml, buildDcCardHtml, buildPcRollHtml, buildNarrowsHtml, buildDialogHtml,
@@ -65,12 +68,25 @@ const say = (html, who = "", gmOnly = false) => { chat.insertAdjacentHTML("after
 const entry = (id) => ROSTER.find((r) => r.id === id) ?? BENCH.find((r) => r.id === id);
 const skillMod = (e, sk) => e.skills?.[sk] ?? 0;
 
+// one race view per fake window (a view lives outside the template, like in the module, so redraws don't restart it)
+const views = new Map();
+function syncViz(root, st) {
+  const slot = root.querySelector(".srt-viz-slot");
+  if (!slot) return;
+  if (!views.has(root)) views.set(root, new RaceView(ROSTER.map((r) => ({ id: r.id, name: r.name, color: r.color }))));
+  const v = views.get(root);
+  v.mount(slot);
+  const nx = nextSection(st);
+  v.update(st.vp, st.delta, isFinished(st) ? "Finish" : `Lap ${Math.min(st.lap, 4)} · Section ${nx ? sectionNumber(nx.lap, nx.key) : 16}`);
+}
+
 let sectionKey = null;
 function render() {
   const prevGm = captureTops(gm), prevPlayer = captureTops(player);
   const draft = captureDraft(gm, sectionKey);          // keep what the GM typed if only a player's roll changed
-  gm.innerHTML = tpl(towerContext(state, { isGM: true, canRoll: true, canBench: true }));
-  player.innerHTML = tpl(towerContext(state, { isGM: false, canRoll: true, canBench: true }));
+  gm.innerHTML = tpl({ ...towerContext(state, { isGM: true, canRoll: true, canBench: true }), showViz: true });
+  player.innerHTML = tpl({ ...towerContext(state, { isGM: false, canRoll: true, canBench: true }), showViz: true });
+  syncViz(gm, state); syncViz(player, state);
   window.__slides = playSlides(player, prevPlayer) + playSlides(gm, prevGm);
   for (const input of gm.querySelectorAll("input[data-kind='pc']")) input.addEventListener("input", () => updateReadout(input));
   const key = `${state.lap}-${state.sec}`;

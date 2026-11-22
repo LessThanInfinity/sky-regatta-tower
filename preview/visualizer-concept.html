@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sky Regatta visualizer concept</title>
+<style>
+  :root { --W: 340px; --H: 600px; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0b0e13; color: #e8ecf2; font: 13px/1.4 system-ui, Segoe UI, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 14px; gap: 10px; min-height: 100vh; }
+  h1 { font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #8b95a7; margin: 0; }
+  .dock { display: flex; align-items: stretch; border: 1px solid #232a36; border-radius: 10px; overflow: hidden; background: #11151c; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+  /* tower mock */
+  .tower { width: var(--W); padding: 10px 12px; display: flex; flex-direction: column; background: #12161d; }
+  .tower .hd { display: flex; justify-content: space-between; font-size: 11px; color: #8b95a7; letter-spacing: .08em; text-transform: uppercase; padding-bottom: 8px; border-bottom: 1px solid #232a36; }
+  .row { display: grid; grid-template-columns: 22px 20px 1fr 34px 34px; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid #1b212b; font-size: 13px; }
+  .row .pos { color: #6e788a; text-align: right; }
+  .row .dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,.85); }
+  .row .vp { text-align: right; font-weight: 600; }
+  .row .d { text-align: right; color: #5fd08a; font-size: 12px; }
+  .ctl { margin-top: auto; display: flex; flex-direction: column; gap: 6px; padding-top: 12px; }
+  button { background: #1d2430; color: #e8ecf2; border: 1px solid #2c3646; border-radius: 6px; padding: 7px 10px; font: inherit; cursor: pointer; }
+  button:hover { background: #263043; }
+  button.main { background: #2b5fd6; border-color: #3f74ee; }
+  .note { font-size: 11px; color: #6e788a; }
+  /* the visualizer */
+  .viz { position: relative; width: var(--W); height: var(--H); overflow: hidden; background: #2c3a2f; border-left: 1px solid #232a36; }
+  .layer { position: absolute; inset: 0; pointer-events: none; }
+  .scroller { position: absolute; left: 0; top: 0; width: 100%; will-change: transform; }
+  .tile { position: absolute; left: 0; width: 100%; }
+  .ground .tile { filter: saturate(.9) blur(.6px); }
+  .haze { background: linear-gradient(180deg, rgba(190,210,225,.32) 0%, rgba(190,210,225,.10) 35%, rgba(190,210,225,.16) 100%); mix-blend-mode: screen; }
+  .vig { box-shadow: inset 0 0 90px 20px rgba(5,8,14,.55); }
+  .drake { position: absolute; left: 0; top: 0; width: 0; height: 0; will-change: transform; }
+  .drake .rot { position: absolute; left: -72px; top: -30px; transform-origin: 72px 30px; }
+  .shade svg { filter: brightness(0) blur(2.5px); opacity: .34; }
+  .tok { position: absolute; left: -10px; top: -10px; width: 20px; height: 20px; border-radius: 50%; border: 2px solid #fff; display: grid; place-items: center; font-size: 8px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.7); box-shadow: 0 2px 6px rgba(0,0,0,.55); }
+  canvas { position: absolute; inset: 0; }
+  .cap { position: absolute; left: 10px; bottom: 8px; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: rgba(255,255,255,.7); text-shadow: 0 1px 3px #000; }
+</style>
+</head>
+<body>
+<h1>Sky regatta v2.0 · visualizer concept (not the module)</h1>
+
+<div class="dock">
+  <div class="tower">
+    <div class="hd"><span>Lap <b id="lap">1</b>/4</span><span>Section <b id="sec">1</b>/16</span></div>
+    <div id="rows"></div>
+    <div class="ctl">
+      <button class="main" id="roll">Roll next section</button>
+      <button id="tie">Everyone tied (stress test)</button>
+      <button id="spread">Big gaps (stress test)</button>
+      <button id="reset">Reset</button>
+      <div class="note">Vertical spacing is the real VP gap, capped at 6. The tower on the left stays as it is today.</div>
+    </div>
+  </div>
+  <div class="viz" id="viz">
+    <div class="layer ground"><div class="scroller" id="gScroll"></div></div>
+    <div class="layer" id="shadows"></div>
+    <div class="layer"><div class="scroller" id="cScroll"></div></div>
+    <div class="layer" id="obst"></div>
+    <canvas id="trails" width="340" height="600"></canvas>
+    <div class="layer" id="drakes"></div>
+    <div class="layer"><div class="scroller" id="fScroll"></div></div>
+    <div class="layer haze"></div>
+    <div class="layer vig"></div>
+    <div class="cap">Lap <span id="cl">1</span> · Section <span id="cs">1</span></div>
+  </div>
+</div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <pattern id="scales" width="7" height="6" patternUnits="userSpaceOnUse">
+      <path d="M0 5 Q3.5 0 7 5" fill="none" stroke="rgba(0,0,0,.34)" stroke-width=".8"/>
+    </pattern>
+    <linearGradient id="bodyShade" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#000" stop-opacity=".45"/>
+      <stop offset=".35" stop-color="#fff" stop-opacity=".14"/>
+      <stop offset=".65" stop-color="#fff" stop-opacity=".14"/>
+      <stop offset="1" stop-color="#000" stop-opacity=".45"/>
+    </linearGradient>
+    <linearGradient id="membTone" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#000" stop-opacity=".32"/>
+      <stop offset=".5" stop-color="#000" stop-opacity=".05"/>
+      <stop offset="1" stop-color="#ffd9b0" stop-opacity=".28"/>
+    </linearGradient>
+    <linearGradient id="membWarm" x1="1" x2="0" y1="0" y2="0">
+      <stop offset="0" stop-color="#000" stop-opacity=".45"/>
+      <stop offset=".35" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity=".25"/>
+    </linearGradient>
+    <linearGradient id="membShade" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#000" stop-opacity=".38"/>
+      <stop offset=".6" stop-color="#fff" stop-opacity=".05"/>
+      <stop offset="1" stop-color="#000" stop-opacity=".2"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<script>
+const W = 340, H = 600;
+const TOP = 78, STEP = 64, CAP = 6;          // y of the leader, pixels per VP of gap, gap cap
+const SEP_Y = 66, SEP_X = 124;                // how close two drakes may be before they must avoid each other
+
+const TEAMS = { Party: '#a855f7', Scales: '#22a559', Light: '#f5b301', Flash: '#ff2e7e' };
+const START = [
+  { id: 'violet',   code: 'VI', name: 'Violet',   team: 'Party',  body: '#2f2250', memb: '#5d4f80', vp: 5 },
+  { id: 'aji',      code: 'AJ', name: 'Aji',      team: 'Party',  body: '#22344f', memb: '#51657e', vp: 3 },
+  { id: 'viridian', code: 'VR', name: 'Viridian', team: 'Scales', body: '#183a2b', memb: '#4a6e5c', vp: 6 },
+  { id: 'ivory',    code: 'IV', name: 'Ivory',    team: 'Scales', body: '#6f695c', memb: '#b4ab98', vp: 4 },
+  { id: 'syu',      code: 'SY', name: 'Syu',      team: 'Light',  body: '#5a3f10', memb: '#9c7c48', vp: 5 },
+  { id: 'ranto',    code: 'RN', name: 'Ran-to',   team: 'Light',  body: '#47200f', memb: '#85563f', vp: 2 },
+  { id: 'sarah',    code: 'SA', name: 'Sarah',    team: 'Flash',  body: '#4a1424', memb: '#8c4254', vp: 4 },
+  { id: 'dutch',    code: 'DU', name: 'Dutch',    team: 'Flash',  body: '#1b1f24', memb: '#505862', vp: 1 },
+];
+const R = START.map((s, i) => ({ ...s, vp0: s.vp, ph: Math.random() * 6.28, wf: 0.55 + Math.random() * 0.25, amp: 7 + Math.random() * 6, delta: 0 }));
+
+/* ---------- the wyvern: layered parts, drawn once, animated by transform only ---------- */
+/* wings sweep FORWARD of the head (bat-symbol silhouette): leading edge up front, scalloped trailing edge sloping back to the hips */
+const MEMB = 'M-7,-14 L-28,-48 L-52,-64 L-100,-80 L-165,-90 L-146,-60 L-148,-28 L-123,-21 L-114,-2 L-89,-3 L-74,14 L-40,4 L-9,12 Z';
+const FING = ['M-52,-64 L-165,-90', 'M-52,-64 L-148,-28', 'M-52,-64 L-114,-2', 'M-52,-64 L-74,14'];
+const VEINS = 'M-100,-76 L-135,-56 M-80,-72 L-120,-34 M-64,-58 L-96,-18 M-130,-50 L-112,-24 M-98,-22 L-90,-8 M-46,-44 L-52,-14 M-150,-60 L-132,-52';
+function wyvern() {
+  const wing = `
+    <g class="wing">
+      <path d="${MEMB}" fill="var(--m)"/>
+      <path d="${MEMB}" fill="url(#membTone)"/>
+      <path d="${MEMB}" fill="url(#membWarm)"/>
+      <path d="${VEINS}" stroke="rgba(0,0,0,.28)" stroke-width=".7" fill="none"/>
+      <g stroke="rgba(10,10,14,.62)" stroke-width="1.5" fill="none" stroke-linecap="butt">${FING.map((d) => `<path d="${d}"/>`).join('')}</g>
+      <path d="M-7,-14 L-28,-48 L-52,-64" fill="none" stroke="var(--c)" stroke-width="4.4" stroke-linecap="butt" stroke-linejoin="miter"/>
+      <path d="M-52,-64 L-100,-80 L-165,-90" fill="none" stroke="var(--c)" stroke-width="2.6" stroke-linecap="butt" stroke-linejoin="miter"/>
+      <path d="M-52,-64 L-59,-77 L-70,-82" stroke="#cfc8b4" stroke-width="2.2" fill="none" stroke-linejoin="miter"/>
+      <path d="M-165,-90 L-171,-91 M-148,-28 L-151,-23 M-114,-2 L-116,3 M-74,14 L-75,19" stroke="rgba(0,0,0,.6)" stroke-width="1.6" stroke-linecap="round"/>
+    </g>`;
+  const tail = 'M-5,14 C-4,38 -3,64 -1.6,94 L-2.6,116 L-.5,98 L0,96 L.5,98 L2.6,116 L1.6,94 C3,64 4,38 5,14 Z';
+  const torso = 'M0,-26 C7,-24 9,-12 7,2 C6,12 3,20 0,28 C-3,20 -6,12 -7,2 C-9,-12 -7,-24 0,-26 Z';
+  return `<svg viewBox="-172 -92 344 212" width="144" height="89" style="overflow:visible">
+    <g class="tail"><path d="${tail}" fill="var(--c)"/><path d="${tail}" fill="url(#scales)"/><path d="${tail}" fill="url(#bodyShade)"/></g>
+    <g class="wl">${wing}</g>
+    <g transform="scale(-1 1)" class="wr">${wing}</g>
+    <path d="${torso}" fill="var(--c)"/><path d="${torso}" fill="url(#scales)"/><path d="${torso}" fill="url(#bodyShade)"/>
+    <path d="M0,-52 L0,96" stroke="rgba(0,0,0,.4)" stroke-width="1.4" stroke-dasharray="1.6 2.2"/>
+    <path d="M-3,-24 C-3,-36 -2.5,-44 -1.6,-50 L1.6,-50 C2.5,-44 3,-36 3,-24 Z" fill="var(--c)"/>
+    <path d="M-3,-24 C-3,-36 -2.5,-44 -1.6,-50 L1.6,-50 C2.5,-44 3,-36 3,-24 Z" fill="url(#scales)"/>
+    <path d="M-4,-50 L-2.6,-58 L0,-64 L2.6,-58 L4,-50 C1.6,-48 -1.6,-48 -4,-50 Z" fill="var(--c)"/>
+    <path d="M-4,-50 L-2.6,-58 L0,-64 L2.6,-58 L4,-50 C1.6,-48 -1.6,-48 -4,-50 Z" fill="url(#bodyShade)"/>
+    <path d="M-3,-53 L-9,-48 L-3,-50 Z M3,-53 L9,-48 L3,-50 Z" fill="#cfc8b4"/>
+  </svg>`;
+}
+
+/* ---------- the world ---------- */
+const $ = (id) => document.getElementById(id);
+const rnd = (a, b) => a + Math.random() * (b - a);
+const TILE = 1400;
+
+function groundTile() {
+  const pal = ['#46583a', '#566a3d', '#75763f', '#665837', '#3d5035', '#7d7048', '#34462f', '#59502f'];
+  let s = `<svg width="${W}" height="${TILE}" viewBox="0 0 ${W} ${TILE}"><rect width="${W}" height="${TILE}" fill="#3f5236"/>`;
+  for (let i = 0; i < 70; i++) {
+    const w = rnd(40, 130), h = rnd(30, 100), x = rnd(-20, W), y = rnd(30, TILE - 120), r = rnd(-14, 14);
+    s += `<g transform="rotate(${r} ${x} ${y})"><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${pal[i % pal.length]}" stroke="rgba(0,0,0,.18)"/>`;
+    for (let k = 1; k < 5; k++) s += `<line x1="${x}" x2="${x + w}" y1="${y + k * h / 5}" y2="${y + k * h / 5}" stroke="rgba(0,0,0,.10)"/>`;
+    s += `</g>`;
+  }
+  let d = '';
+  for (let y = 0; y <= TILE; y += 20) d += (y ? ' L' : 'M') + (170 + 80 * Math.sin(y / TILE * Math.PI * 2) + 28 * Math.sin(y / TILE * Math.PI * 6)).toFixed(1) + ',' + y;
+  s += `<path d="${d}" stroke="#2f5a6c" stroke-width="30" fill="none" stroke-linecap="round" opacity=".9"/><path d="${d}" stroke="#4e8aa0" stroke-width="22" fill="none" opacity=".75"/>`;
+  let d2 = '';
+  for (let y = 0; y <= TILE; y += 20) d2 += (y ? ' L' : 'M') + (70 + 40 * Math.sin(y / TILE * Math.PI * 4 + 1)).toFixed(1) + ',' + y;
+  s += `<path d="${d2}" stroke="#b7a784" stroke-width="3" fill="none" opacity=".7"/>`;
+  for (let i = 0; i < 16; i++) {
+    const cx = rnd(10, W - 40), cy = rnd(60, TILE - 80);
+    for (let k = 0; k < 9; k++) {
+      const x = cx + rnd(0, 34), y = cy + rnd(0, 28), w = rnd(8, 14), h = rnd(8, 14);
+      s += `<rect x="${x + 2}" y="${y + 3}" width="${w}" height="${h}" fill="rgba(0,0,0,.3)"/><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${k % 3 ? '#6b3b33' : '#4b4d55'}"/><line x1="${x}" y1="${y + h / 2}" x2="${x + w}" y2="${y + h / 2}" stroke="rgba(0,0,0,.35)"/>`;
+    }
+  }
+  return s + '</svg>';
+}
+function cloudTile(h, n, op) {
+  let s = `<svg width="${W}" height="${h}" viewBox="0 0 ${W} ${h}" style="filter:blur(7px)">`;
+  for (let i = 0; i < n; i++) {
+    const x = rnd(-30, W + 30), y = rnd(0, h);
+    for (let k = 0; k < 5; k++) s += `<circle cx="${x + rnd(-40, 40)}" cy="${y + rnd(-14, 14)}" r="${rnd(14, 34)}" fill="#fff" opacity="${op}"/>`;
+  }
+  return s + '</svg>';
+}
+function scrollTiles(el, svg, h) { el.innerHTML = `<div class="tile" style="top:0;height:${h}px">${svg}</div><div class="tile" style="top:${-h}px;height:${h}px">${svg}</div>`; el.dataset.h = h; el.dataset.o = 0; }
+scrollTiles($('gScroll'), groundTile(), TILE);
+scrollTiles($('cScroll'), cloudTile(1100, 9, 0.5), 1100);
+scrollTiles($('fScroll'), cloudTile(1700, 5, 0.22), 1700);
+const speed = { gScroll: 58, cScroll: 120, fScroll: 250, obst: 112 };
+function advance(el, v, dt) { const h = +el.dataset.h; el.dataset.o = ((+el.dataset.o + v * dt) % h); el.style.transform = `translateY(${el.dataset.o}px)`; }
+
+/* sea-stack rocks the drakes weave around (decoration for now) */
+const obs = [];
+for (let i = 0; i < 6; i++) obs.push(makeObs(rnd(-700, 0)));
+function makeObs(y) {
+  const el = document.createElement('div');
+  el.style.cssText = 'position:absolute;left:0;top:0;will-change:transform';
+  const r = rnd(15, 26);
+  el.innerHTML = `<svg width="${r * 5}" height="${r * 5}" viewBox="-50 -50 100 100" style="overflow:visible;position:absolute;left:${-r * 2.5}px;top:${-r * 2.5}px">
+    <ellipse cx="14" cy="22" rx="40" ry="30" fill="#000" opacity=".28" style="filter:blur(5px)"/>
+    <polygon points="-30,-8 -14,-34 12,-30 32,-6 26,24 0,34 -26,22" fill="#5b5f66"/>
+    <polygon points="-16,-6 -6,-22 12,-18 20,-2 12,14 -8,16" fill="#7c8188"/>
+    <polygon points="-6,-8 2,-14 10,-8 4,2 -4,2" fill="#a6aaa0"/></svg>`;
+  $('obst').appendChild(el);
+  return { el, x: rnd(40, W - 40), y, r: r * 1.4 };
+}
+
+/* drakes */
+R.forEach((r) => {
+  const d = document.createElement('div'); d.className = 'drake';
+  d.style.setProperty('--c', r.body); d.style.setProperty('--m', r.memb);
+  d.innerHTML = `<div class="rot">${wyvern()}</div><div class="tok" style="background:${TEAMS[r.team]}">${r.code}</div>`;
+  const s = document.createElement('div'); s.className = 'drake shade';
+  s.style.setProperty('--c', '#000'); s.style.setProperty('--m', '#000');
+  s.innerHTML = `<div class="rot">${wyvern()}</div>`;
+  $('drakes').appendChild(d); $('shadows').appendChild(s);
+  r.el = d; r.sh = s; r.rot = d.querySelector('.rot'); r.srot = s.querySelector('.rot');
+  r.wings = [...d.querySelectorAll('.wing'), ...s.querySelectorAll('.wing')];
+  r.tails = [...d.querySelectorAll('.tail'), ...s.querySelectorAll('.tail')];
+  r.x = W / 2; r.y = H + 80; r.bx = W / 2; r.trail = [[], []]; r.flap = 0; r.amp = 0.3;
+});
+
+/* ---------- layout: VP gap -> y, avoid overlap -> x ---------- */
+function layout() {
+  const lead = Math.max(...R.map((r) => r.vp));
+  R.forEach((r) => { r.rawY = TOP + Math.min(lead - r.vp, CAP) * STEP; });
+  const order = [...R].sort((a, b) => b.vp - a.vp || a.rank - b.rank || R.indexOf(a) - R.indexOf(b));
+  order.forEach((r, i) => { r.rank = i; });
+  let prev = null;
+  order.forEach((r) => {                                    // ties get a small stagger so they never stack exactly
+    r.ty = prev && r.rawY < prev.ty + 30 ? prev.ty + 30 : r.rawY; prev = r;
+  });
+  const placed = [], slots = []; for (let x = 74; x <= W - 74; x += 12) slots.push(x);
+  order.forEach((r) => {
+    let best = null, bestScore = 1e9;
+    for (const x of slots) {
+      let pen = 0;
+      for (const p of placed) { const dy = Math.abs(p.ty - r.ty); if (dy < SEP_Y) { const dx = Math.abs(p.bx - x); if (dx < SEP_X) pen += (SEP_X - dx) * 6 + (SEP_Y - dy); } }
+      const score = pen + Math.abs(x - r.bx) * 0.35 + Math.abs(x - W / 2) * 0.06 + Math.random();
+      if (score < bestScore) { bestScore = score; best = x; }
+    }
+    r.bx = best; placed.push(r);
+  });
+}
+function renderTower() {
+  const o = [...R].sort((a, b) => a.rank - b.rank);
+  $('rows').innerHTML = o.map((r) => `<div class="row"><span class="pos">${r.rank + 1}</span><span class="dot" style="background:${TEAMS[r.team]}"></span><span>${r.name}</span><span class="vp">${r.vp}</span><span class="d">${r.delta ? '+' + r.delta : ''}</span></div>`).join('');
+  $('lap').textContent = $('cl').textContent = lap; $('sec').textContent = $('cs').textContent = sec;
+}
+
+/* ---------- controls ---------- */
+let lap = 1, sec = 1;
+function applyRoll(gains) {
+  R.forEach((r) => { r.delta = gains(r); r.vp += r.delta; r.pulse = 1; });
+  sec = Math.min(16, sec + 1); lap = Math.ceil(sec / 4);
+  layout(); renderTower();
+}
+$('roll').onclick = () => applyRoll((r) => Math.floor(rnd(0, 4.6)));
+$('tie').onclick = () => { R.forEach((r) => { r.vp = 5; r.delta = 0; }); layout(); renderTower(); };
+$('spread').onclick = () => { R.forEach((r, i) => { r.vp = [14, 11, 9, 8, 6, 4, 2, 0][i]; r.delta = 0; }); layout(); renderTower(); };
+$('reset').onclick = () => { lap = 1; sec = 1; R.forEach((r) => { r.vp = r.vp0; r.delta = 0; }); layout(); renderTower(); };
+layout(); R.forEach((r) => { r.x = r.bx; r.y = H + 60 + r.rank * 30; }); renderTower();
+
+/* ---------- animation ---------- */
+const cv = $('trails'), cx = cv.getContext('2d');
+const dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = W * dpr; cv.height = H * dpr; cx.scale(dpr, dpr);
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; const t = now / 1000;
+  advance($('gScroll'), speed.gScroll, dt); advance($('cScroll'), speed.cScroll, dt); advance($('fScroll'), speed.fScroll, dt);
+  obs.forEach((o) => {
+    o.y += speed.obst * dt;
+    if (o.y > H + 100) { o.y = rnd(-260, -80); o.x = rnd(40, W - 40); }
+    o.el.style.transform = `translate(${o.x}px,${o.y}px)`;
+  });
+  cx.clearRect(0, 0, W, H);
+  R.forEach((r) => {
+    const px = r.x, py = r.y;
+    let dodge = 0;                                           // steer around the rocks
+    obs.forEach((o) => { const dy = o.y - r.y, dx = r.x - o.x; if (dy > -50 && dy < 120 && Math.abs(dx) < o.r + 52) dodge += Math.sign(dx || 1) * (o.r + 52 - Math.abs(dx)) * 0.9 * (1 - Math.min(1, Math.abs(dy - 30) / 100)); });
+    const weave = Math.sin(t * r.wf + r.ph) * r.amp;
+    const tx = Math.max(72, Math.min(W - 72, r.bx + weave + dodge));
+    r.x += (tx - r.x) * Math.min(1, dt * 2.4);
+    r.y += (r.ty - r.y) * Math.min(1, dt * 1.5);
+    const vx = (r.x - px) / dt, vy = (r.y - py) / dt;
+    const yaw = Math.max(-34, Math.min(34, Math.atan(vx / 105) * 57.3));
+    const climbing = vy < -6;
+    r.amp = r.amp + ((climbing ? 1 : Math.abs(vy) > 6 ? 0.2 : 0.22 + 0.1 * Math.sin(t * 0.7 + r.ph)) - r.amp) * Math.min(1, dt * 3);
+    r.flap += dt * (3.4 + r.amp * 6.5);
+    const z = 1 + 0.035 * Math.sin(t * 1.3 + r.ph) + (climbing ? 0.06 : 0) + (r.pulse ? r.pulse * 0.05 : 0);
+    if (r.pulse) r.pulse = Math.max(0, r.pulse - dt * 1.3);
+    const k = 1 - 0.42 * r.amp * (0.5 + 0.5 * Math.cos(r.flap)), a = 9 * r.amp * Math.sin(r.flap);
+    const bank = Math.max(-0.16, Math.min(0.16, vx / 900));
+    r.wings.forEach((w, i) => { const sgn = 1; w.setAttribute('transform', `translate(-7 -14) rotate(${(a + (i % 2 ? 0 : 0)) * sgn}) scale(${k} ${1 - 0.05 * r.amp * Math.sin(r.flap + 1)}) translate(7 14)`); });
+    r.tails.forEach((tl) => tl.setAttribute('transform', `rotate(${Math.sin(t * 1.6 + r.ph) * 5 - yaw * 0.25} 0 14)`));
+    r.el.style.transform = `translate(${r.x}px,${r.y}px)`;
+    r.rot.style.transform = `rotate(${yaw}deg) scale(${z * (1 - Math.abs(bank) * 0.6)},${z})`;
+    const lift = (z - 1) * 260;
+    r.sh.style.transform = `translate(${r.x + 12 + lift}px,${r.y + 20 + lift}px)`;
+    r.srot.style.transform = `rotate(${yaw}deg) scale(${0.96 * (1 - Math.abs(bank) * 0.6)},0.96)`;
+    /* wingtip streaks in the air */
+    const ang = yaw * Math.PI / 180, span = 70 * k * z;
+    [-1, 1].forEach((sd, i) => {
+      const tip = { x: r.x + Math.cos(ang) * span * sd + Math.sin(ang) * 2, y: r.y - Math.sin(ang) * span * sd - 22 };
+      const tr = r.trail[i]; tr.forEach((p) => { p.y += (speed.gScroll * 1.9) * dt; p.a -= dt * 1.1; });
+      tr.push({ x: tip.x, y: tip.y, a: 0.55 * (0.4 + r.amp * 0.6) }); while (tr.length && (tr[0].a <= 0 || tr.length > 26)) tr.shift();
+      cx.lineWidth = 1.2; cx.lineCap = 'round';
+      for (let n = 1; n < tr.length; n++) { cx.strokeStyle = `rgba(255,255,255,${Math.max(0, tr[n].a * 0.7)})`; cx.beginPath(); cx.moveTo(tr[n - 1].x, tr[n - 1].y); cx.lineTo(tr[n].x, tr[n].y); cx.stroke(); }
+    });
+  });
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+function fit() { const z = Math.min(1, (innerHeight - 60) / H, (innerWidth - 28) / (W * 2)); document.querySelector('.dock').style.zoom = z; }
+addEventListener('resize', fit); fit();
+</script>
+</body>
+</html>

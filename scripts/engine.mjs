@@ -37,7 +37,7 @@ export const clone = (o) => JSON.parse(JSON.stringify(o));
 const clamp16 = (n) => Math.min(6, Math.max(1, n));
 export const signed = (n) => (n > 0 ? `+${n}` : `${n}`);
 export const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-const shuffle = (a) => { const b = [...a]; for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
+const shuffle = (a, rand = Math.random) => { const b = [...a]; for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
 
 export function freshState() {
   return {
@@ -58,6 +58,8 @@ export function freshState() {
     prevRank: null,   // rank of every rider before the last section (null when everyone was level)
     bench: { acts: {}, help: {}, pit: {}, pitLap: {} },   // bench actions this section, the help they gave, pit stops, and the lap of each rider's last stop
     history: [],
+    redo: [],         // sections that were undone and can still be replayed (newest last)
+    lastDice: null,   // the dice the last resolved section used, so it can be run again with the same results
   };
 }
 
@@ -81,6 +83,7 @@ export const ADJ_LIMITS = { min: -3, max: 3 };               // GM adjustment to
 export function normalizeState(state) {
   const f = freshState();
   for (const k of ["pending", "pendingAdj", "used", "drake", "influence", "bonus"]) state[k] ??= clone(f[k]);
+  state.redo ??= [];
   state.bench ??= clone(f.bench);
   for (const k of ["acts", "help", "pit", "pitLap"]) state.bench[k] ??= {};
   state.favor ??= {};
@@ -116,8 +119,10 @@ export async function resolveSection(state, input, d6, opts = {}) {
   normalizeState(state);
   const lap = state.lap;
   const key = SECTIONS[state.sec];
-  state.history.push(clone({ ...state, history: undefined }));
+  const rand = opts.rand ?? Math.random;                 // every random draw goes through d6 or rand, so a section can be re-run with the same dice
+  state.history.push(snapshot(state));
   if (state.history.length > 10) state.history.shift();
+  state.redo = [];                                        // rolling a new section ends any chance to replay an undone one
 
   const before = clone(state.vp);
   const notes = Object.fromEntries(ROSTER.map((r) => [r.id, []]));
@@ -158,7 +163,7 @@ export async function resolveSection(state, input, d6, opts = {}) {
         if (hot) modText += ` ${signed(hot)} Hothead (${hot > 0 ? "behind" : "ahead"})`;
       }
       // the NPC team's bench: with probability opts.npcBench each lap, +1 on the lap roll
-      if ((opts.npcBench ?? 0) > 0 && (opts.rand ?? Math.random)() < opts.npcBench) { mod += 1; modText += " +1 bench"; }
+      if ((opts.npcBench ?? 0) > 0 && rand() < opts.npcBench) { mod += 1; modText += " +1 bench"; }
       const raw = await d6();
       const eff = clamp16(raw + mod);
       const T = LAP_TABLE[eff];
@@ -202,9 +207,9 @@ export async function resolveSection(state, input, d6, opts = {}) {
 
     const targetsFor = (me) => {
       const cand = snap.filter((r) => r.id !== me.id && r.team !== me.team && Math.abs(r.total - me.total) <= 2 && !r.shelter);   // never a teammate
-      const ahead = shuffle(cand.filter((r) => r.total > me.total)).sort((a, b) => a.total - b.total);
-      const level = shuffle(cand.filter((r) => r.total === me.total));
-      const behind = shuffle(cand.filter((r) => r.total < me.total)).sort((a, b) => b.total - a.total);
+      const ahead = shuffle(cand.filter((r) => r.total > me.total), rand).sort((a, b) => a.total - b.total);
+      const level = shuffle(cand.filter((r) => r.total === me.total), rand);
+      const behind = shuffle(cand.filter((r) => r.total < me.total), rand).sort((a, b) => b.total - a.total);
       return [...ahead, ...level, ...behind];
     };
     const eligible = snap
@@ -212,7 +217,7 @@ export async function resolveSection(state, input, d6, opts = {}) {
       .map((r) => ({ r, t: targetsFor(r) }));
     const withTarget = eligible.filter((e) => e.t.length);
     for (const e of eligible.filter((x) => !x.t.length)) notes[e.r.id].push("No one in range (within 2 VP): no attack");
-    const ordered = shuffle(withTarget).sort((a, b) => (a.r.tag === "aggressive" ? 0 : 1) - (b.r.tag === "aggressive" ? 0 : 1));
+    const ordered = shuffle(withTarget, rand).sort((a, b) => (a.r.tag === "aggressive" ? 0 : 1) - (b.r.tag === "aggressive" ? 0 : 1));
     const attackers = ordered.slice(0, MAX_NPC_ATTACKS);
     for (const e of ordered.slice(MAX_NPC_ATTACKS)) notes[e.r.id].push("Held back (attack cap). Swap in if the story wants it.");
     for (const e of attackers) {
@@ -269,11 +274,57 @@ export async function resolveSection(state, input, d6, opts = {}) {
   return { lap, key, before, notes, extra, finished };
 }
 
-/** Undo the last section. Returns the restored state, or null if there is nothing to undo. */
+/** A copy of the state to keep in the history: no history, redo stack or dice record of its own (that would nest forever). */
+const snapshot = (state) => clone({ ...state, history: undefined, redo: undefined, lastDice: undefined });
+
+/**
+ * Wraps the dice so a section's random draws can be recorded, and (with `replay`) fed back in order.
+ * A draw with no recorded value left (the section went differently this time) is rolled fresh.
+ * @returns {{ d6: () => Promise<number>, rand: () => number, rec: {d6: number[], rand: number[]} }}
+ */
+export function makeRecorder(d6, replay = null, rand = Math.random) {
+  const rec = { d6: [], rand: [] };
+  const queue = { d6: [...(replay?.d6 ?? [])], rand: [...(replay?.rand ?? [])] };
+  return {
+    rec,
+    d6: async () => { const v = queue.d6.length ? queue.d6.shift() : await d6(); rec.d6.push(v); return v; },
+    rand: () => { const v = queue.rand.length ? queue.rand.shift() : rand(); rec.rand.push(v); return v; },
+  };
+}
+
+/**
+ * Undo the last section. Returns the restored state, or null if there is nothing to undo.
+ * The undone section is kept on a redo stack, so it can be brought back (replay) or run again with the same dice.
+ */
 export function undo(state) {
   const prev = state.history.pop();
   if (!prev) return null;
-  return { ...prev, history: state.history };
+  const redo = [...(state.redo ?? []), { post: clone({ ...state, history: undefined, redo: undefined }) }].slice(-10);
+  return { ...prev, history: state.history, redo, lastDice: null };
+}
+
+/** Undo the undo: bring back the section that was undone last, exactly as it was. Null if there is nothing to replay. */
+export function replay(state) {
+  const top = (state.redo ?? []).at(-1);
+  if (!top) return null;
+  const history = [...state.history, snapshot(state)].slice(-10);
+  return { ...clone(top.post), history, redo: state.redo.slice(0, -1) };
+}
+
+/** The dice the last undone section used (to run it again with the same results), or null. */
+export const undoneDice = (state) => (state.redo ?? []).at(-1)?.post?.lastDice ?? null;
+
+/** GM fix: set a rider's total directly. Returns { ok, from, to } or { ok:false, error }. */
+export function setVp(state, id, value) {
+  const r = ROSTER.find((x) => x.id === id);
+  if (!r) return { ok: false, error: "That rider isn't in the race." };
+  const n = Number(value);
+  if (value === "" || value === null || value === undefined || !Number.isFinite(n)) return { ok: false, error: "Enter a whole number." };
+  const to = Math.round(n);
+  if (to < -99 || to > 999) return { ok: false, error: "That total is out of range." };
+  const from = state.vp[id] ?? 0;
+  state.vp[id] = to;
+  return { ok: true, from, to, name: r.name };
 }
 
 /** GM-only chat message: one list entry per rider, easy to read in a narrow sidebar. */

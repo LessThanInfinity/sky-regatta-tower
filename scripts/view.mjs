@@ -26,6 +26,7 @@ export function towerContext(state, { isGM = false, portraitFor = null, canRoll 
       gapText: r.gap === 0 ? "LEADER" : `${r.gap}${r.gap === GAP_CAP ? "+" : ""} back`,
       isLeader: r.gap === 0,
       portrait: portraitFor ? portraitFor(r) : null,
+      editable: isGM,                                       // the GM can type a new total straight into the board
     };
   });
 
@@ -45,6 +46,8 @@ export function towerContext(state, { isGM = false, portraitFor = null, canRoll 
       : `Section ${sectionNumber(nx.lap, nx.key)}/16 · ${nx.key}, ${nx.name}${nx.key === "B" ? ` · ${OBSTACLE[nx.lap]}` : ""}`,
     nextLabel: nx ? `Section ${sectionNumber(nx.lap, nx.key)}/16 · Lap ${nx.lap} ${nx.key}, ${nx.name}${nx.key === "B" ? ` (${OBSTACLE[nx.lap]})` : ""}` : "Race over",
     isGM,
+    canReplay: isGM && (state.redo?.length ?? 0) > 0,       // a section was undone: it can be replayed or run again
+    canUndo: (state.history?.length ?? 0) > 0,
     showShelter: state.lap === 2,
     limitText,
     pcs: ROSTER.filter((r) => r.pc).map((r) => {

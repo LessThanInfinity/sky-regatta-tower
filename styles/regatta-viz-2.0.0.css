@@ -29,3 +29,13 @@
 .srt-v-tok.srt-v-img { background-color: #111; }
 
 .srt-v-cap { position: absolute; left: 10px; bottom: 8px; font: 600 10px/1 "Titillium Web", "Signika", sans-serif; letter-spacing: .1em; text-transform: uppercase; color: rgba(255, 255, 255, .7); text-shadow: 0 1px 3px #000; }
+
+/* GM: the total on each row is editable (click, type, Enter). */
+.sky-regatta .srt-row input.srt-vp-edit {
+  width: 100%; min-width: 0; height: auto; padding: 0; margin: 0; text-align: center; font: inherit; font-weight: 700; color: inherit;
+  font-size: 1.15rem; background: transparent; border: 1px solid transparent; border-radius: 3px; box-shadow: none; -moz-appearance: textfield; appearance: textfield;
+}
+.sky-regatta .srt-row input.srt-vp-edit::-webkit-outer-spin-button,
+.sky-regatta .srt-row input.srt-vp-edit::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.sky-regatta .srt-row input.srt-vp-edit:hover { border-color: #5a5a72; cursor: text; }
+.sky-regatta .srt-row input.srt-vp-edit:focus { border-color: #e10600; background: #0d0d14; outline: none; }

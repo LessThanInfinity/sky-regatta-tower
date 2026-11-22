@@ -52,6 +52,17 @@ A portrait, top-down window docked on the right of the standings tower. The eigh
 - **Settings:** *Show the race view* (per player, on a small screen turn it off; the window shrinks back to the tower), *Animate the race view* (off: the drakes jump to their places and nothing scrolls; also off with the system's reduced-motion setting) and *Actor tokens on the drakes* (world).
 - **Files:** `scripts/racelayout.mjs` (positions, unit tested), `scripts/wyvern.mjs` (the artwork as SVG), `scripts/viz.mjs` (the animation), `styles/regatta-viz-2.0.0.css`. `preview/viz.html` runs the real view in a browser with buttons to roll, tie and spread the field.
 
+## Roll visibility, VP fixes, replay and redo (v2.1)
+
+- **Roll visibility:** every roll the module makes follows the roller's own chat roll mode (Public Roll, Private GM Roll, Blind GM Roll, Self Roll, the dropdown in the chat box). A player's roll runs on the GM's computer, so the player's mode is sent along with the request. A player's roll is public unless they pick another mode; the NPC d20s and your own rolls follow your mode (the world setting *Show the NPC d20s to players*, when on, always makes them public). The GM report in chat stays GM only.
+- **Fix a total any time (GM):** each VP total on the board is a box. Click it, type the new total, press Enter (Escape cancels). The race view and the standings update, and a GM-only chat line records the change. The same is available as `api.setVp(id, value)` or the command action `setVp` with `input: { id, value }`.
+- **Undo, Replay, Redo roll (GM):**
+  - **Undo** takes back the last section, as before.
+  - **Replay undone section** (appears after an undo) undoes the undo: it brings back the section you just undid, exactly as it was. You can undo several sections and replay them newest first. Anything you changed since the undo (steppers, a typed total) is lost when you replay.
+  - **Redo roll (same dice)** (also appears after an undo) runs the section again with the same dice for the NPCs, the lap rolls, who attacks whom, and the bench roll, and with the values currently in the steppers. Use it when you forgot a modifier. The normal **Roll next section** still rolls fresh dice.
+  - Rolling a new section, or Reset, ends the chance to replay.
+  - Commands: `replay` and `redo` (with the same `input` as `roll`) on the `command` setting; `api.replay()` and `api.redoRoll(input)`.
+
 ## Install
 
 In Foundry: Add-on Modules, Install Module, paste the manifest URL:
@@ -65,7 +76,7 @@ Then enable the module in the world.
 - **Show to players:** the button in the GM controls opens the standings on every connected client (also available as `api.show()`, or action `show` on the command setting). Without it, players get the window automatically after the first roll.
 - Open the window on your own screen with the macro `game.modules.get("sky-regatta-tower").api.open()`.
 - GM only: `api.rollNext({ violet: 5, aji: 4 })`, `api.undo()`, `api.reset()`.
-- **Remote control (for the MCP or another macro):** write `{ "id": "<anything unique>", "action": "roll" | "undo" | "reset" | "open", "input": { "violet": 5, "aji": 4 } }` to the module's `command` world setting. The active GM's browser tab acts on it. PC totals default to the saved ones if you leave them out.
+- **Remote control (for the MCP or another macro):** write `{ "id": "<anything unique>", "action": "roll" | "undo" | "replay" | "redo" | "setVp" | "reset" | "open", "input": { "violet": 5, "aji": 4 } }` to the module's `command` world setting. The active GM's browser tab acts on it. PC totals default to the saved ones if you leave them out.
 - The race state is the module's `state` world setting.
 
 ## Develop

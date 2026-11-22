@@ -46,7 +46,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/handlebars.js/4.7.8/handlebars.min.js"></script>
 <script type="module">
-import { ROSTER, BENCH, SECTIONS, freshState, resolveSection, undo, buildReport } from "../scripts/engine.mjs";
+import { ROSTER, BENCH, SECTIONS, freshState, resolveSection, undo, replay, undoneDice, setVp, makeRecorder, buildReport } from "../scripts/engine.mjs";
 import { validateBenchRequest, applyBenchAction, clearBenchAct, buildBenchDialogHtml, buildBenchCardHtml, readBenchForm, benchMod } from "../scripts/bench.mjs";
 import { towerContext, validateInput, readoutFor } from "../scripts/view.mjs";
 import { captureTops, playSlides } from "../scripts/animate.mjs";
@@ -89,6 +89,10 @@ function render() {
   syncViz(gm, state); syncViz(player, state);
   window.__slides = playSlides(player, prevPlayer) + playSlides(gm, prevGm);
   for (const input of gm.querySelectorAll("input[data-kind='pc']")) input.addEventListener("input", () => updateReadout(input));
+  for (const input of gm.querySelectorAll("input.srt-vp-edit")) {
+    input.addEventListener("change", () => { const r = setVp(state, input.dataset.id, input.value); if (r.ok && r.from !== r.to) say(`<b>Sky Regatta:</b> manual fix: ${r.name} ${r.from} → ${r.to} VP.`, "Sky Regatta", true); else if (!r.ok) warn.textContent = r.error; render(); });
+    input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") input.blur(); else if (ev.key === "Escape") { input.value = input.dataset.from; input.blur(); } });
+  }
   const key = `${state.lap}-${state.sec}`;
   window.__restored = applyDraft(gm, draft, key, (el) => { if (el.dataset.kind === "pc") updateReadout(el); });
   sectionKey = key;
@@ -229,9 +233,11 @@ function onClick(ev) {
   else if (action === "show") warn.textContent = "(Preview: in Foundry this opens the window on every player's screen.)";
   else if (action === "roll") doRoll();
   else if (action === "undo") { const p = undo(state); if (p) state = p; render(); }
+  else if (action === "replay") { const p = replay(state); if (p) state = p; render(); }
+  else if (action === "redoRoll") doRoll(undoneDice(state));
   else if (action === "reset") { state = freshState(); chat.innerHTML = ""; render(); }
 }
-async function doRoll() {
+async function doRoll(replayDice = null) {
   const input = {};
   for (const el of gm.querySelectorAll(".srt-controls input[name]")) {
     if (el.name === "unlock") continue;
@@ -240,7 +246,9 @@ async function doRoll() {
   }
   const problem = validateInput(state, input, unlocked());
   if (problem) { warn.textContent = problem; return; }
-  const report = await resolveSection(state, input, d6);
+  const dice = makeRecorder(d6, replayDice);
+  const report = await resolveSection(state, input, dice.d6, { rand: dice.rand });
+  state.lastDice = dice.rec;
   npcDice(report);
   say(buildReport(state, report), "Sky Regatta", true);
   render();

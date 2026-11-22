@@ -5,7 +5,7 @@
  * to make their rolls over the module socket, so there is one source of truth and nothing to trust.
  */
 import {
-  ROSTER, BENCH, SECTIONS, sectionNumber, freshState, normalizeState, resolveSection, undo as undoState, nextSection, isFinished, buildReport,
+  ROSTER, BENCH, SECTIONS, sectionNumber, freshState, normalizeState, resolveSection, undo as undoState, replay as replayState, undoneDice, setVp, makeRecorder, nextSection, isFinished, buildReport,
 } from "./engine.mjs";
 import { towerContext, validateInput, readoutFor } from "./view.mjs";
 import { validateBenchRequest, applyBenchAction, clearBenchAct, buildBenchDialogHtml, buildBenchCardHtml, readBenchForm, benchMod } from "./bench.mjs";
@@ -17,6 +17,7 @@ import {
 } from "./rolls.mjs";
 import { CUTIN_ID, isCrit, playCritCutIn } from "./cutin.mjs";
 import { RaceView } from "./viz.mjs";
+import { normalizeMode, visibility } from "./rollmode.mjs";
 
 const MODULE_ID = "sky-regatta-tower";
 const CHANNEL = `module.${MODULE_ID}`;
@@ -39,6 +40,13 @@ const d6 = async () => (await new Roll("1d6").evaluate()).total;
 const isActiveGM = () => game.user.isGM && game.users.activeGM?.id === game.user.id;
 
 const gmIds = () => ChatMessage.getWhisperRecipients("GM").map((u) => u.id);
+/** This person's chat roll visibility (Public, Private GM, Blind GM, Self), as set in the chat box. */
+const myRollMode = () => game.settings.get("core", "rollMode");
+/** Who sees a roll a player asked for: the mode they sent with the request, applied for them (the GM's computer makes the roll). */
+function rollVisibility(req, userId) {
+  const user = game.users.get(userId);
+  return visibility(normalizeMode(req?.rollMode, !!user?.isGM), userId, gmIds());
+}
 
 async function whisper(html) {
   const gms = ChatMessage.getWhisperRecipients("GM").map((u) => u.id);
@@ -111,8 +119,11 @@ function ridersFor(user) {
 }
 
 // ---------- the GM's section roll ----------
-/** Resolve the next section, save, show the NPCs' dice, and post the GM report. `unlocked` skips the VP range checks. */
-async function rollNext(input = {}, unlocked = false) {
+/**
+ * Resolve the next section, save, show the NPCs' dice, and post the GM report. `unlocked` skips the VP range checks.
+ * `replayDice` (from an undone section) makes the NPCs' random results come out the same as before.
+ */
+async function rollNext(input = {}, unlocked = false, replayDice = null) {
   if (!game.user.isGM || busy) return;
   busy = true;
   try {
@@ -120,7 +131,9 @@ async function rollNext(input = {}, unlocked = false) {
     if (isFinished(state)) { ui.notifications.warn("The race is finished. Reset it to run again."); return; }
     const problem = validateInput(state, input, unlocked);
     if (problem) { ui.notifications.warn(problem); return; }
-    const report = await resolveSection(state, input, d6, opts());
+    const dice = makeRecorder(d6, replayDice);
+    const report = await resolveSection(state, input, dice.d6, { ...opts(), rand: dice.rand });
+    state.lastDice = dice.rec;                        // kept with the result, so an undone section can be run again with the same dice
     await saveState(state);
     if (game.settings.get(MODULE_ID, "npcDice")) await postNpcDice(report);
     await whisper(buildReport(state, report));
@@ -149,7 +162,8 @@ async function postNpcDice(report) {
     rows.push({ ...p, nat, total, degree: degreeOf(total, p.dc, nat) });
   }
   const data = { speaker: { alias: "The field" }, content: buildNpcDiceHtml(report.lap, report.key, rows), rolls, sound: CONFIG.sounds.dice };
-  if (!game.settings.get(MODULE_ID, "npcDiceVisible")) data.whisper = ChatMessage.getWhisperRecipients("GM").map((u) => u.id);
+  // the show follows the GM's own roll mode, unless the setting says it is always public
+  if (!game.settings.get(MODULE_ID, "npcDiceVisible")) Object.assign(data, visibility(normalizeMode(myRollMode(), true), game.user.id, gmIds()));
   await ChatMessage.create(data);
 }
 
@@ -160,7 +174,36 @@ async function undoLast() {
   if (!prev) { ui.notifications.warn("Nothing to undo."); return; }
   await saveState(prev);
   const nx = nextSection(prev);
-  await whisper(`<b>Sky Regatta:</b> undid the last section. Next up: Lap ${nx.lap}, Section ${nx.key} (${nx.name}).`);
+  await whisper(`<b>Sky Regatta:</b> undid the last section. Next up: Lap ${nx.lap}, Section ${nx.key} (${nx.name}). <i>Replay</i> brings it back as it was; <i>Redo roll</i> runs it again with the same dice.`);
+}
+
+/** Undo the undo: bring back the section that was undone last, exactly as it was. */
+async function replayLast() {
+  if (!game.user.isGM || busy) return;
+  const state = getState();
+  const next = state ? replayState(state) : null;
+  if (!next) { ui.notifications.warn("There is no undone section to replay."); return; }
+  await saveState(next);
+  await whisper(`<b>Sky Regatta:</b> replayed the undone section (Lap ${next.last?.lap}, ${next.last?.key}), exactly as it was.`);
+}
+
+/** Run the undone section again with the same dice (and the steppers' current values), for when a modifier was forgotten. */
+async function redoRoll(input = {}, unlocked = false) {
+  if (!game.user.isGM || busy) return;
+  const state = getState();
+  if (!state?.redo?.length) { ui.notifications.warn("There is no undone section to redo."); return; }
+  await rollNext(input, unlocked, undoneDice(state));
+}
+
+/** GM fix: type a new total for a rider straight into the board. */
+async function editVp(id, value) {
+  if (!game.user.isGM) return;
+  const state = getState() ?? freshState();
+  const res = setVp(state, id, value);
+  if (!res.ok) { ui.notifications.warn(res.error); app?.render(); return; }
+  if (res.from === res.to) return;
+  await saveState(state);
+  await whisper(`<b>Sky Regatta:</b> manual fix: ${res.name} ${res.from} → ${res.to} VP.`);
 }
 
 async function resetRace(skipConfirm = false) {
@@ -222,7 +265,7 @@ async function executePcRoll(req, userId) {
     const res = applyNarrows(state, req, rolls, { autoVp: autoVp() });
     if (!res.ok) return reject(userId, res.error);
     await saveState(state);
-    const nmsg = await ChatMessage.create({ speaker, whisper: gmIds(), rolls: chat, sound: CONFIG.sounds.dice, content: buildNarrowsHtml({ pcName: entry.name, checks: res.checks, vp: res.pending.suggested, notes: res.pending.notes, auto: autoVp() }) });
+    const nmsg = await ChatMessage.create({ speaker, ...rollVisibility(req, userId), rolls: chat, sound: CONFIG.sounds.dice, content: buildNarrowsHtml({ pcName: entry.name, checks: res.checks, vp: res.pending.suggested, notes: res.pending.notes, auto: autoVp() }) });
     void critCutIn(actor, nmsg, res.checks.map((c) => c.degree));
     return;
   }
@@ -234,7 +277,7 @@ async function executePcRoll(req, userId) {
   await saveState(state);
   const p = res.pending;
   const msg = await ChatMessage.create({
-    speaker, whisper: gmIds(), rolls: [roll], sound: CONFIG.sounds.dice,
+    speaker, ...rollVisibility(req, userId), rolls: [roll], sound: CONFIG.sounds.dice,
     content: buildPcRollHtml({ pcName: entry.name, choice: v.choice, lineId: v.lineId, dc: v.dc, nat: roll.total, parts: m.parts, total: p.total, degree: p.degree, vp: p.suggested, notes: p.notes, auto: autoVp() }),
   });
   void critCutIn(actor, msg, p.degree);
@@ -269,7 +312,7 @@ async function executeReroll(req, userId) {
     const choice = menu.choices.find((c) => c.id === p.choiceId);
     content = buildPcRollHtml({ pcName: entry.name, choice, lineId: p.lineId, dc: p.dc, nat: p.nat, parts: res.parts, total: p.total, degree: p.degree, vp: p.suggested, notes: p.notes, auto: p.auto, reroll: p.reroll });
   }
-  const rmsg = await ChatMessage.create({ speaker, whisper: gmIds(), rolls: [roll], sound: CONFIG.sounds.dice, content });
+  const rmsg = await ChatMessage.create({ speaker, ...rollVisibility(req, userId), rolls: [roll], sound: CONFIG.sounds.dice, content });
   // after a Hero Point reroll, only the rerolled check can newly be a crit (the other Narrows checks already played theirs)
   void critCutIn(actor, rmsg, p.skill === "narrows" ? p.checks[p.reroll?.which ?? 0]?.degree : p.degree);
 }
@@ -292,7 +335,7 @@ async function executeBench(req, userId) {
   const res = applyBenchAction(state, req, { nat: roll.total, mod, parts: [{ label: "skill", value: mod - 2 }, { label: "party", value: 2 }] });
   if (!res.ok) return reject(userId, res.error);
   await saveState(state);
-  await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor }), whisper: gmIds(), rolls: [roll], sound: CONFIG.sounds.dice, content: buildBenchCardHtml(res.act) });
+  await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor }), ...rollVisibility(req, userId), rolls: [roll], sound: CONFIG.sounds.dice, content: buildBenchCardHtml(res.act) });
 }
 
 /** The bench member's action picker. */
@@ -329,7 +372,7 @@ async function openBenchDialog() {
     ],
   });
   if (!result || typeof result !== "object") return;
-  const request = { benchId: member.id, ...result };
+  const request = { benchId: member.id, rollMode: myRollMode(), ...result };
   const check = validateBenchRequest(state, request);
   if (!check.ok) return ui.notifications.warn(check.error);
   if (game.user.isGM) {
@@ -382,7 +425,7 @@ async function openRollDialog(where = {}) {
       ],
     });
     if (picked && typeof picked === "object" && picked.hero) {
-      const request = { pcId: entry.id, which: picked.which };
+      const request = { pcId: entry.id, which: picked.which, rollMode: myRollMode() };
       if (game.user.isGM) {
         if (!isActiveGM()) return ui.notifications.warn("Another GM is the active one; ask them to roll.");
         queueReroll(request, game.user.id);
@@ -406,7 +449,7 @@ async function openRollDialog(where = {}) {
     ],
   });
   if (!result || typeof result !== "object") return;
-  const request = { pcId: entry.id, lap: state.lap, key, ...result };
+  const request = { pcId: entry.id, lap: state.lap, key, rollMode: myRollMode(), ...result };
   const check = validatePcRequest(state, request);
   if (!check.ok) return ui.notifications.warn(check.error);
   if (game.user.isGM) {
@@ -442,6 +485,9 @@ async function runCommand(cmd) {
   lastCommandId = cmd.id;
   if (cmd.action === "roll") await rollNext(cmd.input ?? {}, !!cmd.unlock);
   else if (cmd.action === "undo") await undoLast();
+  else if (cmd.action === "replay") await replayLast();
+  else if (cmd.action === "redo") await redoRoll(cmd.input ?? {}, !!cmd.unlock);
+  else if (cmd.action === "setVp") await editVp(cmd.input?.id, cmd.input?.value);
   else if (cmd.action === "reset") await resetRace(true);
   else if (cmd.action === "open") getApp().render({ force: true });
   else if (cmd.action === "show") await showToPlayers();
@@ -460,6 +506,8 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
     actions: {
       roll: SkyRegattaTower.#onRoll,
       undo: SkyRegattaTower.#onUndo,
+      replay: SkyRegattaTower.#onReplay,
+      redoRoll: SkyRegattaTower.#onRedoRoll,
       reset: SkyRegattaTower.#onReset,
       step: SkyRegattaTower.#onStep,
       show: SkyRegattaTower.#onShow,
@@ -527,6 +575,11 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
     for (const input of this.element.querySelectorAll("input[data-kind='pc']")) {
       input.addEventListener("input", () => this.#updateReadout(input));
     }
+    for (const input of this.element.querySelectorAll("input.srt-vp-edit")) {       // GM: type a new total on the board
+      input.addEventListener("change", () => editVp(input.dataset.id, input.value));
+      input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") input.blur(); else if (ev.key === "Escape") { input.value = input.dataset.from; input.blur(); } });
+      input.addEventListener("focus", () => input.select());
+    }
     const st = getState() ?? freshState();
     this.#syncViz(st);
     const key = `${st.lap}-${st.sec}`;
@@ -555,7 +608,8 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
-  static async #onRoll(event, target) {
+  /** What the GM has typed in the control bar, in the shape the engine wants. */
+  #readInput() {
     const form = this.element.querySelector(".srt-controls");
     const input = {};
     for (const el of form.querySelectorAll("input[name]")) {
@@ -567,9 +621,20 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
       if (el.type === "checkbox") input[el.name] = el.checked;
       else input[el.name] = el.value === "" ? undefined : Number(el.value);
     }
+    return input;
+  }
+
+  static async #onRoll(event, target) {
+    const input = this.#readInput();
     target.disabled = true;
     try { await rollNext(input, this.#unlocked()); } finally { target.disabled = false; }
   }
+  static async #onRedoRoll(event, target) {
+    const input = this.#readInput();
+    target.disabled = true;
+    try { await redoRoll(input, this.#unlocked()); } finally { target.disabled = false; }
+  }
+  static async #onReplay() { await replayLast(); }
   static async #onShow() { await showToPlayers(); }
   static async #onPostDcs() { await postDcCard(); }
   static async #onRollCheck() { await openRollDialog(); }
@@ -657,7 +722,7 @@ Hooks.once("init", () => {
   });
   game.settings.register(MODULE_ID, "npcDiceVisible", {
     name: "Show the NPC d20s to players",
-    hint: "On: players see the dice (and Dice So Nice animates them). Off (default): only the GM sees them.",
+    hint: "On: the NPCs' dice are always public (and Dice So Nice animates them for everyone). Off (default): they follow your own chat roll mode, so a Private GM Roll keeps them to yourself.",
     scope: "world", config: true, type: Boolean, default: false,
   });
   const applyRules = () => { RULES.burn = game.settings.get(MODULE_ID, "enableBurn"); RULES.benchExtras = game.settings.get(MODULE_ID, "benchExtras"); };
@@ -693,7 +758,7 @@ Hooks.once("ready", () => {
     postDcs: postDcCard,
     rollCheck: openRollDialog,
     bench: openBenchDialog,
-    rollNext, undo: undoLast, reset: resetRace,
+    rollNext, undo: undoLast, replay: replayLast, redoRoll, setVp: editVp, reset: resetRace,
     getState,
   };
   game.socket.on(CHANNEL, (data) => {

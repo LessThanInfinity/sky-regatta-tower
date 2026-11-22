@@ -20,7 +20,7 @@
         {{name}}
       </span>
       <span class="delta {{deltaClass}}">{{deltaText}}</span>
-      <span class="total">{{total}}</span>
+      {{#if editable}}<input class="total srt-vp-edit" type="number" step="1" value="{{total}}" data-id="{{id}}" data-from="{{total}}" title="Click to correct {{name}}'s total, then press Enter" aria-label="{{name}} total VP">{{else}}<span class="total">{{total}}</span>{{/if}}
       <span class="movegap">
         <span class="move {{moveClass}}">{{moveText}}</span>
         <span class="gap {{#if isLeader}}lead{{/if}}">{{gapText}}</span>
@@ -127,6 +127,12 @@
       <button type="button" class="srt-show" data-action="postDcs"><i class="fa-solid fa-comment-dots"></i> Post DCs to chat</button>
       <button type="button" class="srt-show" data-action="show"><i class="fa-solid fa-tv"></i> Show to players</button>
     </div>
+    {{#if canReplay}}
+    <div class="srt-buttons srt-two">
+      <button type="button" class="srt-show" data-action="replay" title="Undo the undo: bring back the section you just undid, exactly as it was. Anything you changed since is lost."><i class="fa-solid fa-rotate-right"></i> Replay undone section</button>
+      <button type="button" class="srt-show" data-action="redoRoll" title="Run this section again with the same dice and the values currently in the steppers (use it after you fix a modifier)."><i class="fa-solid fa-dice"></i> Redo roll (same dice)</button>
+    </div>
+    {{/if}}
     <div class="srt-buttons">
       {{#unless finished}}<button type="button" class="srt-go" data-action="roll"><i class="fa-solid fa-dice"></i> Roll next section</button>{{/unless}}
       <button type="button" data-action="undo"><i class="fa-solid fa-rotate-left"></i> Undo</button>

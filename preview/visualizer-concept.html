@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sky Regatta visualizer concept</title>
 <style>
-  :root { --W: 340px; --H: 720px; }
+  :root { --W: 340px; --H: 760px; }
   * { box-sizing: border-box; }
   body { margin: 0; background: #0b0e13; color: #e8ecf2; font: 13px/1.4 system-ui, Segoe UI, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 14px; gap: 10px; min-height: 100vh; }
   h1 { font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #8b95a7; margin: 0; }
@@ -59,7 +59,7 @@
     <div class="layer" id="shadows"></div>
     <div class="layer"><div class="scroller" id="cScroll"></div></div>
     <div class="layer" id="obst"></div>
-    <canvas id="trails" width="340" height="720"></canvas>
+    <canvas id="trails" width="340" height="760"></canvas>
     <div class="layer" id="drakes"></div>
     <div class="layer"><div class="scroller" id="fScroll"></div></div>
     <div class="layer haze"></div>
@@ -98,8 +98,8 @@
 </svg>
 
 <script>
-const W = 340, H = 720;
-const TOP = 74, AVAIL = H - 74 - 96;               // y of the leader, vertical room for the pack
+const W = 340, H = 760;
+const TOP = 64, AVAIL = H - 64 - 74;               // y of the leader, vertical room for the pack
 const BLEND = 0.4, GAP_FULL = 6;                   // 0 = evenly spaced by rank, 1 = pure VP gap; a gap of GAP_FULL VP uses the whole height
 const cam = { cur: 1, target: 1 };                // camera zoom: 1 = close, smaller = zoomed out
 const SEP_Y = 66, SEP_X = 124;                // how close two drakes may be before they must avoid each other
@@ -241,7 +241,7 @@ function layout() {
   });
   let prev = null;
   order.forEach((r) => {                                    // never closer than this vertically (ties stay in tower order)
-    r.ty = prev && r.rawY < prev.ty + 34 ? prev.ty + 34 : r.rawY; prev = r;
+    r.ty = prev && r.rawY < prev.ty + 40 ? prev.ty + 40 : r.rawY; prev = r;
   });
   cam.target = Math.max(0.7, Math.min(1, 1 - (maxGap - 10) / 70));   // very wide fields: shrink the drakes a little
   const placed = [], slots = []; for (let x = 74; x <= W - 74; x += 12) slots.push(x);

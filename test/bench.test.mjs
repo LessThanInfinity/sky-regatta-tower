@@ -174,3 +174,12 @@ test("the bench dialog lists the standard actions for the section, both riders, 
   const fd = { get: (k) => ({ action: "pit", rider: "violet", skill_pit: "crafting" })[k] ?? null };
   assert.deepEqual(readBenchForm(fd), { action: "pit", rider: "violet", skill: "crafting" });
 });
+
+test("the bench dialog ticks the member's best skill by default, not just the first one", () => {
+  const s = freshState();
+  const reta = { perception: 18, nature: 0, medicine: 0, crafting: 17, diplomacy: 19 };
+  const html = buildBenchDialogHtml(s, "reta", { mods: reta });
+  assert.match(html, /name="skill_pit" value="crafting" checked/);
+  assert.match(html, /name="skill_fix" value="diplomacy" checked/);
+  assert.doesNotMatch(html, /name="skill_pit" value="nature" checked/);
+});

@@ -114,6 +114,26 @@ export class RaceView {
     }
   }
 
+  /**
+   * Show the bench's effects: a flash then a lasting aura on the helped drake. `auras` is benchAuras(state).
+   * A new act flashes once; redraws and reopened windows just show the aura.
+   */
+  setAuras(auras = {}) {
+    const first = !this.aurasSeen;
+    this.aurasSeen = true;
+    for (const r of this.riders) {
+      const a = auras[r.id] ?? null;
+      const el = r.el;
+      const key = a?.key ?? "";
+      if (key === (r.auraKey ?? "")) continue;
+      r.auraKey = key;
+      el.classList.remove("srt-fx-good", "srt-fx-great", "srt-fx-bad", "srt-fx-flash", "srt-fx-settled");
+      if (!a) continue;
+      void el.offsetWidth;
+      el.classList.add(`srt-fx-${a.tone}`, first ? "srt-fx-settled" : "srt-fx-flash");
+    }
+  }
+
   /** Move the drakes to match the standings. Safe to call on every redraw: nothing happens unless the totals changed. */
   update(vp, delta = {}, caption = "") {
     this.cap.textContent = caption;

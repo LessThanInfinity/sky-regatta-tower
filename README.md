@@ -63,6 +63,11 @@ A portrait, top-down window docked on the right of the standings tower. The eigh
   - Rolling a new section, or Reset, ends the chance to replay.
   - Commands: `replay` and `redo` (with the same `input` as `roll`) on the `command` setting; `api.replay()` and `api.redoRoll(input)`.
 
+## Bench visuals and skill picker (v2.2)
+
+- **Spotter aura:** the helped drake's outline lights up. Success flashes green then pulses; a crit pulses brighter and faster; a crit failure flashes red then glows dim red. It clears when that rider rolls.
+- **Bench skill picker:** actions with several skills (Pit crew, Fix it) tick the member's best skill by default, in a clearer "Pick the skill to roll" panel, and the bench dialog has more breathing room.
+
 ## Install
 
 In Foundry: Add-on Modules, Install Module, paste the manifest URL:

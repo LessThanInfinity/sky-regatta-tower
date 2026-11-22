@@ -177,12 +177,14 @@ export function buildBenchDialogHtml(state, benchId, { mods = {}, locked = null 
     return `<label class="srt-pick srt-sponsor-card${locked && !chosen ? " off" : ""}"><input type="radio" name="rider" value="${r.id}" ${chosen ? "checked" : ""} ${locked ? "disabled" : ""}>`
       + `<span class="card"><span class="head"><b>${esc(r.name)}</b></span><span class="tag">${esc(tags.join(" · "))}</span></span></label>`;
   };
+  const step = (n, t) => `<div class="srt-step"><span class="n">${n}</span> ${t}</div>`;
+  // the skill ticked by default is this member's best one for the action, not just the first listed
+  const bestSkill = (a) => a.skills.reduce((best, s) => ((mods[s] ?? -Infinity) > (mods[best] ?? -Infinity) ? s : best), a.skills[0]);
   const skillSets = BENCH_ACTIONS.filter((a) => a.skills.length > 1).map((a) =>
-    `<div class="srt-skillset srt-skillset-${a.id}"><span>Which skill?</span>${a.skills.map((s, i) => `<label class="chip"><input type="radio" name="skill_${a.id}" value="${s}" ${(locked ? locked.skill === s : i === 0) ? "checked" : ""} ${locked ? "disabled" : ""}><span>${SKILL_LABEL[s]}${mods[s] === undefined ? "" : ` <b>${signed(benchMod(mods[s]))}</b>`}</span></label>`).join("")}</div>`).join("");
+    `<div class="srt-skillset srt-skillset-${a.id}"><div class="srt-skillhead">${step(3, "Pick the skill to roll")} <small>best one is ticked</small></div>${a.skills.map((s) => `<label class="chip"><input type="radio" name="skill_${a.id}" value="${s}" ${(locked ? locked.skill === s : bestSkill(a) === s) ? "checked" : ""} ${locked ? "disabled" : ""}><span>${SKILL_LABEL[s]}${mods[s] === undefined ? "" : ` <b>${signed(benchMod(mods[s]))}</b>`}</span></label>`).join("")}</div>`).join("");
   const css = BENCH_ACTIONS.map((a) => `.srt-bench:has(input[name="action"][value="${a.id}"]:checked) .srt-skillset-${a.id} { display: flex; }`
     + (a.target ? "" : `\n.srt-bench:has(input[name="action"][value="${a.id}"]:checked) .srt-bench-riders { display: none; }`)).join("\n");
   const done = locked ? `<div class="srt-locked"><div class="cap">${esc(member.name)} has already acted this section</div>${buildBenchCardHtml(locked)}</div>` : "";
-  const step = (n, t) => `<div class="srt-step"><span class="n">${n}</span> ${t}</div>`;
   return `<div class="srt-dialog srt-bench"><style>${css}</style>${done}<p class="srt-intro">${esc(member.name)} helps from the pit wall. One action per section.</p>`
     + step(1, "Choose your action") + `<div class="srt-opts">${availableBenchActions(SECTIONS_KEY(state)).map(tile).join("")}</div>`
     + `<div class="srt-bench-riders">${step(2, "Which rider?")}<div class="srt-sponsors srt-two">${ROSTER.filter((r) => r.pc).map(riderCard).join("")}</div></div>`

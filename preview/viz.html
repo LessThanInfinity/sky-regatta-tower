@@ -19,12 +19,17 @@
   <button id="tie">Everyone tied</button>
   <button id="spread">Big gaps</button>
   <button id="reset">Reset</button>
+  <button data-fx="success">Spotter: success (Violet)</button>
+  <button data-fx="critSuccess">Spotter: crit success (Aji)</button>
+  <button data-fx="critFailure">Spotter: crit fail (Syu)</button>
+  <button data-fx="clear">Clear auras</button>
   <button id="tokens">Toggle token images</button>
   <select id="size"><option value="1">Slot 340 x 760</option><option value="0.7">Slot 70 percent</option><option value="wide">Slot 500 x 500</option></select>
   <pre id="out"></pre>
 </div>
 <script type="module">
 import { RaceView } from "../scripts/viz.mjs";
+import { benchAuras } from "../scripts/benchfx.mjs";
 import { ROSTER, freshState, resolveSection } from "../scripts/engine.mjs";
 
 const slot = document.getElementById("slot");
@@ -52,6 +57,14 @@ document.getElementById("size").onchange = (e) => {
   const v = e.target.value;
   slot.style.width = v === "wide" ? "500px" : `${340 * Number(v)}px`; slot.style.height = v === "wide" ? "500px" : `${760 * Number(v)}px`;
 };
+const fxWho = { success: "violet", critSuccess: "aji", critFailure: "syu" };
+let n = 0;
+document.querySelectorAll("[data-fx]").forEach((b) => b.onclick = () => {
+  const d = b.dataset.fx;
+  if (d === "clear") state.bench = { acts: {}, help: {}, pit: {}, pitLap: {} };
+  else { state.bench ??= { acts: {}, help: {}, pit: {}, pitLap: {} }; state.bench.acts["t" + d] = { action: "spotter", rider: fxWho[d], degree: d, benchId: "t" + d, lap: 1, key: "A", nat: ++n, total: 30 }; }
+  view.setAuras(benchAuras(state));
+});
 window.view = view; window.getState = () => state;
 </script>
 </body>

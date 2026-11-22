@@ -17,6 +17,7 @@ import {
 } from "./rolls.mjs";
 import { CUTIN_ID, isCrit, playCritCutIn } from "./cutin.mjs";
 import { RaceView } from "./viz.mjs";
+import { benchAuras } from "./benchfx.mjs";
 import { normalizeMode, visibility } from "./rollmode.mjs";
 
 const MODULE_ID = "sky-regatta-tower";
@@ -554,6 +555,7 @@ class SkyRegattaTower extends HandlebarsApplicationMixin(ApplicationV2) {
     raceView.refreshTokens();
     raceView.mount(slot);
     const nx = nextSection(state);
+    raceView.setAuras(benchAuras(state));
     raceView.update(state.vp, state.delta, isFinished(state) ? "Finish" : `Lap ${Math.min(state.lap, 4)} · Section ${nx ? sectionNumber(nx.lap, nx.key) : 16}`);
   }
 
